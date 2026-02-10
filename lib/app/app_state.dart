@@ -22,21 +22,20 @@ class AppState extends ChangeNotifier {
   String? token;
   UserProfile? profile;
 
-  bool get isLoggedIn => token != null && token!.isNotEmpty;
+  // ✅ Always non-null ApiClient (no more ApiClient? crash)
+  late ApiClient api = ApiClient(baseUrl: baseUrl, token: token);
+
+  bool get isLoggedIn => (token != null && token!.isNotEmpty);
 
   String get role {
-    // Prefer explicit role if backend provides it
     final r = profile?.role?.toUpperCase().trim();
     if (r != null && r.isNotEmpty) return r;
-
-    // Fallback inference
     if (profile?.isSupervisor == true) return 'SUPERVISOR';
     return 'WORKER';
   }
 
-  ApiClient? get api {
-    if (!isLoggedIn) return null;
-    return ApiClient(baseUrl: baseUrl, token: token!);
+  void _rebuildApi() {
+    api = ApiClient(baseUrl: baseUrl, token: token);
   }
 
   Future<void> loadSession() async {
@@ -53,6 +52,8 @@ class AppState extends ChangeNotifier {
         profile = null;
       }
     }
+
+    _rebuildApi();
     notifyListeners();
   }
 
@@ -60,44 +61,80 @@ class AppState extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('baseUrl', baseUrl);
     await prefs.setString('token', token ?? '');
-    await prefs.setString('profile', profile == null ? '' : jsonEncode({
-      'employee_id': profile!.employeeId,
-      'full_name': profile!.fullName,
-      'role': profile!.role,
-      'is_supervisor': profile!.isSupervisor,
-    }));
+    await prefs.setString(
+      'profile',
+      profile == null
+          ? ''
+          : jsonEncode({
+              'employee_id': profile!.employeeId,
+              'full_name': profile!.fullName,
+              'role': profile!.role,
+              'is_supervisor': profile!.isSupervisor,
+            }),
+    );
   }
 
   Future<void> logout() async {
     token = null;
     profile = null;
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('token');
     await prefs.remove('profile');
+
+    _rebuildApi();
     notifyListeners();
   }
 
   void setBaseUrl(String v) {
     baseUrl = v.trim();
+    _rebuildApi();
     notifyListeners();
     saveSession();
   }
 
-  Future<void> login({
-    required String employeeId,
-  }) async {
-    final tempApi = ApiClient(baseUrl: baseUrl, token: ''); // no auth needed for login
+  // -------------------------
+  // Robust login parsing
+  // -------------------------
+  Future<void> login({required String employeeId}) async {
+    final tempApi = ApiClient(baseUrl: baseUrl, token: null);
+
+    // Keep your backend path as-is (ngrok shows it works)
     final res = await tempApi.postJson(
       '/api/v1/auth/login',
       body: {'employee_id': employeeId.trim()},
     );
 
-    final data = (res['data'] as Map<String, dynamic>? ) ?? {};
-    final t = (data['token'] ?? '').toString();
-    final p = (data['profile'] as Map<String, dynamic>? ) ?? {};
+    // res might be:
+    // 1) {success:true, data:{token, profile/employee}}
+    // 2) {token, profile/employee}   (if api_client unwraps)
+    final root = (res is Map) ? Map<String, dynamic>.from(res) : <String, dynamic>{};
+
+    final dynamic dataNode = root['data'];
+    final data = (dataNode is Map)
+        ? Map<String, dynamic>.from(dataNode)
+        : root;
+
+    final t = (data['token'] ?? root['token'] ?? '').toString();
+
+    // profile could be named profile / employee / user
+    final dynamic profileNode =
+        data['profile'] ?? data['employee'] ?? data['user'] ?? root['profile'] ?? root['employee'] ?? root['user'];
+
+    final p = (profileNode is Map)
+        ? Map<String, dynamic>.from(profileNode)
+        : <String, dynamic>{};
 
     token = t;
-    profile = UserProfile.fromJson(p);
+    profile = p.isNotEmpty ? UserProfile.fromJson(p) : null;
+
+    // If backend doesn’t return profile but token exists, still allow login.
+    // (Some systems return token only.)
+    if (token == null || token!.isEmpty) {
+      throw Exception('Login OK but token missing. Response: $root');
+    }
+
+    _rebuildApi();
     await saveSession();
     notifyListeners();
   }

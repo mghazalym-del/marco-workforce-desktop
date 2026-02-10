@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../app/app_state.dart';
+import '../app/app_shell.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -14,9 +15,20 @@ class _LoginPageState extends State<LoginPage> {
   final urlCtrl = TextEditingController();
   bool loading = false;
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final app = context.read<AppState>();
+      urlCtrl.text = app.baseUrl;
+      setState(() {});
+    });
+  }
+
   Future<void> _doLogin() async {
     final app = context.read<AppState>();
     final emp = empCtrl.text.trim();
+
     if (emp.isEmpty) {
       await _popup('Validation', 'Please enter employee_id (e.g., E2001).');
       return;
@@ -25,17 +37,28 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => loading = true);
     try {
       final url = urlCtrl.text.trim();
-      if (url.isNotEmpty) app.setBaseUrl(url);
+      if (url.isNotEmpty && url != app.baseUrl) {
+        app.setBaseUrl(url);
+      }
 
       await app.login(employeeId: emp);
 
+      if (!mounted) return;
+
+      // ✅ Now AppState.api is ALWAYS non-null
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => AppShell(api: app.api),
+        ),
+      );
+
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Logged in as ${app.profile?.employeeId}')),
+        SnackBar(content: Text('Logged in as ${app.profile?.employeeId ?? emp}')),
       );
     } catch (e) {
       await _popup('Login failed', e.toString());
     } finally {
-      setState(() => loading = false);
+      if (mounted) setState(() => loading = false);
     }
   }
 
@@ -46,7 +69,10 @@ class _LoginPageState extends State<LoginPage> {
         title: Text(title),
         content: Text(msg),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK')),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
         ],
       ),
     );
@@ -61,9 +87,6 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    final app = context.watch<AppState>();
-    urlCtrl.text = app.baseUrl;
-
     return Scaffold(
       appBar: AppBar(title: const Text('MARCO Workforce Desktop — Login')),
       body: Center(
@@ -78,7 +101,7 @@ class _LoginPageState extends State<LoginPage> {
                   controller: urlCtrl,
                   decoration: const InputDecoration(
                     labelText: 'Backend Base URL',
-                    hintText: 'https://fireless-nontabulated-margarett.ngrok-free.dev',
+                    hintText: 'https://xxxxx.ngrok-free.dev',
                   ),
                 ),
                 const SizedBox(height: 12),
