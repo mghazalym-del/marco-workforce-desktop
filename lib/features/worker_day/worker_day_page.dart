@@ -68,30 +68,51 @@ class _WorkerDayPageState extends State<WorkerDayPage> {
 
     try {
       final json = await widget.api.getJson(
-        '/api/v1/monitor/worker/${widget.employeeId}/day',
+        // Let ApiClient add /api/v1
+        '/monitor/worker/${widget.employeeId}/day',
         query: {'work_date': _selectedDateStr},
       );
 
-      final data = (json['data'] as Map<String, dynamic>);
+      // ✅ Accept both shapes:
+      // 1) { work_day, scans, sessions, summary }  (already unwrapped)
+      // 2) { data: { work_day, scans, sessions, summary } } (old behavior)
+      Map<String, dynamic> data;
+      if (json is Map && json['data'] is Map) {
+        data = Map<String, dynamic>.from(json['data'] as Map);
+      } else if (json is Map) {
+        data = Map<String, dynamic>.from(json as Map);
+      } else {
+        data = <String, dynamic>{};
+      }
 
-      workDay = data['work_day'] as Map<String, dynamic>?;
+      workDay = (data['work_day'] is Map)
+          ? Map<String, dynamic>.from(data['work_day'] as Map)
+          : null;
 
-      final rawScans = (data['scans'] as List<dynamic>?) ?? [];
-      scans = rawScans.map((e) => (e as Map).cast<String, dynamic>()).toList();
+      final rawScans = (data['scans'] as List?) ?? const [];
+      scans = rawScans
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
 
-      final rawSessions = (data['sessions'] as List<dynamic>?) ?? [];
-      sessions = rawSessions.map((e) => (e as Map).cast<String, dynamic>()).toList();
+      final rawSessions = (data['sessions'] as List?) ?? const [];
+      sessions = rawSessions
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
 
-      summary = data['summary'] as Map<String, dynamic>?;
+      summary = (data['summary'] is Map)
+          ? Map<String, dynamic>.from(data['summary'] as Map)
+          : null;
 
-      // Keep filters valid after reload
       _normalizeFilters();
     } catch (e) {
       error = e.toString();
     } finally {
-      setState(() => loading = false);
+      if (mounted) setState(() => loading = false);
     }
   }
+
 
   void _normalizeFilters() {
     final statusOptions = _scanStatusOptions();

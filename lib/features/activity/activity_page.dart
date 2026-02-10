@@ -4,9 +4,8 @@ import '../../api/api_client.dart';
 import '../../app/app_state.dart';
 
 class ActivityPage extends StatefulWidget {
-  const ActivityPage({super.key, required this.api});
-
   final ApiClient api;
+  const ActivityPage({super.key, required this.api});
 
   @override
   State<ActivityPage> createState() => _ActivityPageState();
@@ -15,42 +14,126 @@ class ActivityPage extends StatefulWidget {
 class _ActivityPageState extends State<ActivityPage> {
   bool loading = true;
   String? error;
-  List<dynamic> rows = [];
+  List<Map<String, dynamic>> items = [];
 
-  
-  String? _lastDateStr;
-@override
+  String _lastWorkDate = '';
+
+  @override
+  void initState() {
+    super.initState();
+    // initial load will happen from didChangeDependencies
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final dateStr = context.watch<AppState>().selectedDateStr;
-    if (_lastDateStr != dateStr) {
-      _lastDateStr = dateStr;
-      _load();
+    final workDate = context.watch<AppState>().selectedDateStr;
+    if (workDate != _lastWorkDate) {
+      _lastWorkDate = workDate;
+      _load(workDate);
     }
   }
 
-  Future<void> _load() async {
-    final appState = context.read<AppState>();
-
+  Future<void> _load(String workDate) async {
     setState(() {
       loading = true;
       error = null;
+      items = [];
     });
 
     try {
-      final json = await widget.api.getJson(
-        '/api/v1/monitor/activity/projects',
-        query: {'work_date': appState.selectedDateStr},
+      final res = await widget.api.getJson(
+        '/monitor/activity/projects',
+        query: {'work_date': workDate},
       );
 
-      final data = (json['data'] as Map<String, dynamic>? ) ?? {};
-      rows = (data['items'] as List<dynamic>? ) ?? [];
+      // ApiClient.getJson returns "data" (per our earlier fixes),
+      // so res might already be the data node.
+      // Accept multiple shapes safely:
+      // - { activity: [ ... ] }
+      // - { items: [ ... ] }
+      // - { projects: [ ... ] }
+      // - [ ... ]
+      List list = [];
+      if (res is List) {
+        list = res;
+      } else if (res is Map) {
+        final a = res['activity'];
+        final it = res['items'];
+        final prj = res['projects'];
 
+        if (a is List) list = a;
+        else if (it is List) list = it;
+        else if (prj is List) list = prj;
+        else {
+          // last resort: first list found
+          for (final v in res.values) {
+            if (v is List) {
+              list = v;
+              break;
+            }
+          }
+        }
+      }
+
+      final parsed = list
+          .whereType<dynamic>()
+          .map((e) => (e is Map)
+              ? Map<String, dynamic>.from(e as Map)
+              : <String, dynamic>{'value': e})
+          .toList();
+
+      setState(() {
+        items = parsed;
+        loading = false;
+      });
     } catch (e) {
-      error = e.toString();
-    } finally {
-      setState(() => loading = false);
+      setState(() {
+        error = e.toString();
+        loading = false;
+      });
     }
+  }
+
+  String _titleOf(Map<String, dynamic> m) {
+    // Common backend keys (we try best effort)
+    return (m['project_name'] ??
+            m['project'] ??
+            m['name'] ??
+            m['title'] ??
+            'Activity')
+        .toString();
+  }
+
+  String _subtitleOf(Map<String, dynamic> m) {
+    // Show useful details if present
+    final parts = <String>[];
+
+    final workers = m['workers_count'] ?? m['workers'];
+    if (workers != null) parts.add('Workers: $workers');
+
+    final scansA = m['accepted_scans'];
+    final scansR = m['rejected_scans'];
+    if (scansA != null || scansR != null) {
+      parts.add('Scans: ${scansA ?? 0} accepted / ${scansR ?? 0} rejected');
+    }
+
+    final first = m['first_activity'];
+    final last = m['last_activity'];
+    if (first != null || last != null) {
+      parts.add('First: ${first ?? "-"}  Last: ${last ?? "-"}');
+    }
+
+    // If nothing matched, just dump a short snippet:
+    if (parts.isEmpty) {
+      final s = m.entries
+          .take(3)
+          .map((e) => '${e.key}=${e.value}')
+          .join(' • ');
+      return s.isEmpty ? '' : s;
+    }
+
+    return parts.join(' • ');
   }
 
   @override
@@ -58,44 +141,26 @@ class _ActivityPageState extends State<ActivityPage> {
     if (loading) {
       return const Center(child: CircularProgressIndicator());
     }
-
     if (error != null) {
-      return Center(child: Text('Error: $error'));
+      return Center(child: Text(error!));
+    }
+    if (items.isEmpty) {
+      return const Center(child: Text('No activity for the selected date.'));
     }
 
-    
-
-    if (rows.isEmpty) {
-      return const Center(
-        child: Text('No activity for the selected date.'),
-      );
-    }
-return RefreshIndicator(
-      onRefresh: _load,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: DataTable(
-          columns: const [
-            DataColumn(label: Text('Project')),
-            DataColumn(label: Text('Task')),
-            DataColumn(label: Text('Workers')),
-            DataColumn(label: Text('Accepted')),
-            DataColumn(label: Text('Rejected')),
-            DataColumn(label: Text('Last Activity')),
-          ],
-          rows: rows.map<DataRow>((r) {
-            final m = r as Map<String, dynamic>;
-            return DataRow(cells: [
-              DataCell(Text((m['project_id'] ?? '').toString())),
-              DataCell(Text((m['task_id'] ?? '').toString())),
-              DataCell(Text((m['workers'] ?? 0).toString())),
-              DataCell(Text((m['accepted_scans'] ?? 0).toString())),
-              DataCell(Text((m['rejected_scans'] ?? 0).toString())),
-              DataCell(Text((m['last_scan'] ?? m['last_activity'] ?? '').toString())),
-            ]);
-          }).toList(),
-        ),
-      ),
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      itemCount: items.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      itemBuilder: (_, i) {
+        final m = items[i];
+        return Card(
+          child: ListTile(
+            title: Text(_titleOf(m)),
+            subtitle: Text(_subtitleOf(m)),
+          ),
+        );
+      },
     );
   }
 }

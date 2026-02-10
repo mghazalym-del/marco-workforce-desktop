@@ -95,14 +95,22 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
 
     try {
       // IMPORTANT: your ApiClient supports getJson(path)
-      final resp = await widget.api.getJson("/api/v1/projects/${widget.projectCode}/tree");
+      final resp = await widget.api.getJson("/projects/${widget.projectCode}/tree");
 
-      if (resp["success"] != true) {
-        throw Exception(resp["error"]?["message"] ?? "Failed to load tree");
+      // resp might be:
+      // 1) { items: [...] }  (data already unwrapped)
+      // 2) { data: { items: [...] } }  (older behavior)
+      Map<String, dynamic> data;
+      if (resp is Map && resp['items'] is List) {
+        data = (resp as Map).cast<String, dynamic>();
+      } else if (resp is Map && resp['data'] is Map) {
+        data = (resp['data'] as Map).cast<String, dynamic>();
+      } else {
+        data = {};
       }
 
-      final data = (resp["data"] as Map?)?.cast<String, dynamic>() ?? {};
       final raw = (data["items"] as List?) ?? [];
+
 
       final items = raw.map((e) {
         final m = (e as Map).cast<String, dynamic>();

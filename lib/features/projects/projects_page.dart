@@ -29,14 +29,26 @@ class _ProjectsPageState extends State<ProjectsPage> {
     });
 
     try {
-      final resp = await widget.api.getJson('/api/v1/projects');
+      final resp = await widget.api.getJson('/projects'); // ✅ let ApiClient add /api/v1
 
-      // ✅ Correct parsing
-      final data = resp['data'] as Map<String, dynamic>?;
-      final list = (data?['projects'] as List?) ?? const [];
+      // resp might be:
+      // 1) { projects: [...] }
+      // 2) { data: { projects: [...] } } (if old client still used somewhere)
+      Map<String, dynamic> data;
+
+      if (resp is Map && resp['projects'] is List) {
+        data = (resp as Map).cast<String, dynamic>();
+      } else if (resp is Map && resp['data'] is Map) {
+        data = (resp['data'] as Map).cast<String, dynamic>();
+      } else {
+        data = {};
+      }
+
+      final list = (data['projects'] as List?) ?? const [];
 
       projects = list
-          .map((e) => (e as Map).cast<String, dynamic>())
+          .whereType<Map>()
+          .map((e) => e.cast<String, dynamic>())
           .where((p) => (p['project_code'] ?? '').toString().isNotEmpty)
           .toList();
     } catch (e) {
@@ -47,6 +59,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
       setState(() => loading = false);
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
