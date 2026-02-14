@@ -5,7 +5,6 @@ import '../../app/app_state.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key, required this.api});
-
   final ApiClient api;
 
   @override
@@ -17,47 +16,74 @@ class _DashboardPageState extends State<DashboardPage> {
   String? error;
   Map<String, dynamic>? data;
 
+  String _lastWorkDate = '';
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _load();
-  }
 
-  Future<void> _load() async {
-    final appState = context.read<AppState>();
-
-    setState(() {
-      loading = true;
-      error = null;
-    });
-
-    try {
-      final json = await widget.api.getJson(
-        '/api/v1/monitor/dashboard',
-        query: {'work_date': appState.selectedDateStr},
-      );
-      data = json['data'] as Map<String, dynamic>?;
-    } catch (e) {
-      error = e.toString();
-    } finally {
-      setState(() => loading = false);
+    final workDate = context.watch<AppState>().selectedDateStr;
+    if (workDate != _lastWorkDate) {
+      _lastWorkDate = workDate;
+      _load(workDate);
     }
   }
 
-  Widget _kpi(String title, dynamic value) {
+  Future<void> _load(String workDate) async {
+    setState(() {
+      loading = true;
+      error = null;
+      data = null;
+    });
+
+    try {
+      // ApiClient prefixes /api/v1
+      final json = await widget.api.getJson(
+        '/monitor/dashboard',
+        query: {'work_date': workDate},
+      );
+
+      // Support both shapes:
+      // - already unwrapped: {work_date, day_counts, scan_counts, top_tasks}
+      // - wrapped: {data:{...}}
+      Map<String, dynamic> d;
+      if (json is Map && json['data'] is Map) {
+        d = Map<String, dynamic>.from(json['data'] as Map);
+      } else if (json is Map) {
+        d = Map<String, dynamic>.from(json as Map);
+      } else {
+        d = <String, dynamic>{};
+      }
+
+      setState(() {
+        data = d.isEmpty ? null : d;
+      });
+    } catch (e) {
+      setState(() => error = e.toString());
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  int _asInt(dynamic v) {
+    if (v == null) return 0;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString()) ?? 0;
+  }
+
+  Widget _kpi(String title, int value) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title,
-                style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            Text(title, style: const TextStyle(fontSize: 12, color: Colors.grey)),
             const SizedBox(height: 8),
             Text(
               value.toString(),
-              style: const TextStyle(
-                  fontSize: 28, fontWeight: FontWeight.bold),
+              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
             ),
           ],
         ),
@@ -65,60 +91,49 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  Widget _simpleTable(String title, List<dynamic> rows,
-      List<String> columns) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title,
-                style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                columns: columns
-                    .map((c) => DataColumn(label: Text(c)))
-                    .toList(),
-                rows: rows.map<DataRow>((r) {
-                  final map = r as Map<String, dynamic>;
-                  return DataRow(
-                    cells: columns
-                        .map((c) =>
-                            DataCell(Text((map[c] ?? '').toString())))
-                        .toList(),
-                  );
-                }).toList(),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+  List<Map<String, dynamic>> _mapList(dynamic v) {
+    if (v is! List) return const [];
+    return v
+        .whereType<dynamic>()
+        .map((e) => e is Map ? Map<String, dynamic>.from(e as Map) : <String, dynamic>{})
+        .where((m) => m.isNotEmpty)
+        .toList();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
+    if (loading) return const Center(child: CircularProgressIndicator());
+    if (error != null) return Center(child: Text('Error: $error'));
+    if (data == null) return const Center(child: Text('No data for the selected date.'));
 
-    if (error != null) {
-      return Center(child: Text('Error: $error'));
-    }
+    final dayCounts = (data!['day_counts'] is Map)
+        ? Map<String, dynamic>.from(data!['day_counts'] as Map)
+        : <String, dynamic>{};
 
-    if (data == null) {
-      return const Center(child: Text('No data'));
-    }
+    final scanCounts = (data!['scan_counts'] is Map)
+        ? Map<String, dynamic>.from(data!['scan_counts'] as Map)
+        : <String, dynamic>{};
 
-    final summary = data!['summary'] ?? {};
-    final projects = data!['projects'] ?? [];
-    final tasks = data!['tasks'] ?? [];
+    final openDays = _asInt(dayCounts['open_days']);
+    final closedDays = _asInt(dayCounts['closed_days']);
+
+    final totalScans = _asInt(scanCounts['total_scans']);
+    final acceptedScans = _asInt(scanCounts['accepted_scans']);
+    final rejectedScans = _asInt(scanCounts['rejected_scans']);
+    final offlineScans = _asInt(scanCounts['offline_scans']);
+
+    // backend: top_tasks: [{project_id, task_id, scans}]
+    final topTasksRaw = data!['top_tasks'] ?? const [];
+    final topTasks = _mapList(topTasksRaw).map((t) {
+      return {
+        'project_id': (t['project_id'] ?? '').toString(),
+        'task_id': (t['task_id'] ?? '').toString(),
+        'scans': _asInt(t['scans']),
+      };
+    }).toList();
 
     return RefreshIndicator(
-      onRefresh: _load,
+      onRefresh: () async => _load(context.read<AppState>().selectedDateStr),
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -126,24 +141,53 @@ class _DashboardPageState extends State<DashboardPage> {
             spacing: 12,
             runSpacing: 12,
             children: [
-              _kpi('Open Days', summary['open_days'] ?? 0),
-              _kpi('Closed Days', summary['closed_days'] ?? 0),
-              _kpi('Accepted Scans', summary['accepted_scans'] ?? 0),
-              _kpi('Rejected Scans', summary['rejected_scans'] ?? 0),
-              _kpi('Offline Scans', summary['offline_scans'] ?? 0),
+              _kpi('Open Days', openDays),
+              _kpi('Closed Days', closedDays),
+              _kpi('Total Scans', totalScans),
+              _kpi('Accepted Scans', acceptedScans),
+              _kpi('Rejected Scans', rejectedScans),
+              _kpi('Offline Scans', offlineScans),
             ],
           ),
           const SizedBox(height: 16),
-          _simpleTable(
-            'Top Projects',
-            projects,
-            ['project_id', 'workers', 'accepted', 'rejected'],
-          ),
-          const SizedBox(height: 16),
-          _simpleTable(
-            'Top Tasks',
-            tasks,
-            ['task_id', 'workers', 'accepted', 'rejected'],
+
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Top Tasks', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+
+                  if (topTasks.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: Text('No task activity for the selected date.'),
+                    )
+                  else
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: DataTable(
+                        columns: const [
+                          DataColumn(label: Text('project_id')),
+                          DataColumn(label: Text('task_id')),
+                          DataColumn(label: Text('scans')),
+                        ],
+                        rows: topTasks.map((r) {
+                          return DataRow(
+                            cells: [
+                              DataCell(Text(r['project_id'].toString())),
+                              DataCell(Text(r['task_id'].toString())),
+                              DataCell(Text(r['scans'].toString())),
+                            ],
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
         ],
       ),

@@ -136,7 +136,14 @@ class _SupervisorDaysPageState extends State<SupervisorDaysPage> {
 
     try {
       // ✅ Correct endpoint + correct response shape: data.supervisors
-      final json = await widget.api.getJson('/api/v1/admin/supervisors');
+      final app = context.read<AppState>();
+      final role = app.role.toUpperCase();
+
+      final endpoint = (role == 'SE' || role == 'PM')
+          ? '/api/v1/se/supervisors'
+          : '/api/v1/monitor/supervisors'; // ADMIN stays here
+
+      final json = await widget.api.getJson(endpoint);
       final supervisors = _extractList(json, dataKey: 'supervisors');
 
       setState(() {
@@ -297,22 +304,39 @@ class _SupervisorDaysPageState extends State<SupervisorDaysPage> {
         if (empId.isEmpty) return <String, dynamic>{};
 
         try {
-          final sum = await widget.api.getJson(
+          final s = await widget.api.getJson(
             '/api/v1/assignments/day/summary/$empId',
             query: {'work_date': workDate},
           );
-          return (sum is Map<String, dynamic>) ? sum : <String, dynamic>{};
+
+          if (s is! Map<String, dynamic>) return <String, dynamic>{};
+
+          // Backend response is wrapped inside { success, data }
+          final data = s['data'] as Map<String, dynamic>?;
+
+          if (data == null) return <String, dynamic>{};
+
+          return {
+            'sessions_count': data['sessions_count'],
+            'total_minutes': data['total_minutes'],
+            'open_task': data['open_task'],
+          };
         } catch (_) {
           return <String, dynamic>{};
         }
       }));
 
-      for (final s in sums) {
-        sessions += (s['sessions_count'] ?? 0) is int ? (s['sessions_count'] as int) : int.tryParse('${s['sessions_count'] ?? 0}') ?? 0;
-        minutes += (s['total_minutes'] ?? 0) is int ? (s['total_minutes'] as int) : int.tryParse('${s['total_minutes'] ?? 0}') ?? 0;
-        if (s['open_task'] != null) openTasks++;
+      for (final d in sums) {
+        final sc = d['sessions_count'];
+        final tm = d['total_minutes'];
+
+        sessions += (sc is int) ? sc : int.tryParse('$sc') ?? 0;
+        minutes += (tm is int) ? tm : int.tryParse('$tm') ?? 0;
+
+        if (d['open_task'] != null) openTasks++;
       }
 
+//////////// till here
       return _Rollup(
         sessionsCount: sessions,
         totalMinutes: minutes,
@@ -422,10 +446,11 @@ class _SupervisorDaysPageState extends State<SupervisorDaysPage> {
       itemBuilder: (context, i) {
         final workDate = (_days[i]['work_date'] ?? '').toString();
 
-        return FutureBuilder<_Rollup>(
+        return FutureBuilder<_Rollup?>(
           future: _getRollup(workDate),
           builder: (context, snap) {
             final r = snap.data;
+
             return Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -434,9 +459,29 @@ class _SupervisorDaysPageState extends State<SupervisorDaysPage> {
               ),
               child: Row(
                 children: [
-                  Expanded(child: Text(workDate, style: const TextStyle(fontWeight: FontWeight.w600))),
-                  if (r == null) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
-                  if (r != null) ...[
+                  Expanded(
+                    child: Text(
+                      workDate,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+
+                  // ✅ show spinner only while waiting
+                  if (snap.connectionState == ConnectionState.waiting)
+                    const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+
+                  // ✅ if error, stop spinning and show error indicator
+                  if (snap.hasError)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Text(
+                        'Failed',
+                        style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+
+                  // ✅ show values when ready
+                  if (!snap.hasError && r != null) ...[
                     Text("Sessions: ${r.sessionsCount}  "),
                     Text("Minutes: ${r.totalMinutes}  "),
                     Text("Open tasks: ${r.openTasksCount}"),
