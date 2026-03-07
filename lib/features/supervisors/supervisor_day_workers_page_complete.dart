@@ -22,90 +22,6 @@ class SupervisorDayWorkersPage extends StatefulWidget {
   State<SupervisorDayWorkersPage> createState() => _SupervisorDayWorkersPageState();
 }
 
-// ------------------------------------------------------------
-// Status UI helpers
-// OPEN 🟡 | CLOSED 🔵 | RETURNED 🟠 | FINALIZED 🟢
-// ------------------------------------------------------------
-class StatusUI {
-  static String normalize(String? s) => (s ?? '').trim().toUpperCase();
-
-  static Color color(String? status) {
-    switch (normalize(status)) {
-      case 'OPEN':
-        return const Color(0xFFF4C542); // 🟡
-      case 'CLOSED':
-        return const Color(0xFF3B82F6); // 🔵
-      case 'RETURNED':
-        return const Color(0xFFFF8A3D); // 🟠
-      case 'FINALIZED':
-        return const Color(0xFF22C55E); // 🟢
-      default:
-        return const Color(0xFF9CA3AF);
-    }
-  }
-
-  static IconData icon(String? status) {
-    switch (normalize(status)) {
-      case 'OPEN':
-        return Icons.radio_button_checked;
-      case 'CLOSED':
-        return Icons.lock_outline;
-      case 'RETURNED':
-        return Icons.undo;
-      case 'FINALIZED':
-        return Icons.verified;
-      default:
-        return Icons.help_outline;
-    }
-  }
-
-  static String label(String? status) {
-    final s = normalize(status);
-    return s.isEmpty ? 'UNKNOWN' : s;
-  }
-}
-
-Widget statusBadge(String? status) {
-  final c = StatusUI.color(status);
-  return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-    decoration: BoxDecoration(
-      color: c.withOpacity(0.12),
-      borderRadius: BorderRadius.circular(999),
-      border: Border.all(color: c.withOpacity(0.45)),
-    ),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(StatusUI.icon(status), size: 16, color: c),
-        const SizedBox(width: 6),
-        Text(
-          StatusUI.label(status),
-          style: TextStyle(fontWeight: FontWeight.w700, color: c),
-        ),
-      ],
-    ),
-  );
-}
-
-class _LegendItem extends StatelessWidget {
-  final String label;
-  final Color color;
-  const _LegendItem({required this.label, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-        const SizedBox(width: 6),
-        Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w700)),
-      ],
-    );
-  }
-}
-
 class _SupervisorDayWorkersPageState extends State<SupervisorDayWorkersPage> {
   String _dateOnly(String s) {
     if (s.isEmpty) return s;
@@ -114,12 +30,13 @@ class _SupervisorDayWorkersPageState extends State<SupervisorDayWorkersPage> {
 
   String get _workDate => _dateOnly(widget.workDate);
 
+
   bool loading = false;
   String? error;
 
   List<Map<String, dynamic>> rows = [];
 
-  // per-action busy flags
+  // per-worker action busy flags
   final Set<String> busyIds = {};
 
   bool _headerBusy = false;
@@ -154,23 +71,20 @@ class _SupervisorDayWorkersPageState extends State<SupervisorDayWorkersPage> {
         '/api/v1/supervisor/open_task/close',
       ];
 
-  // SE/PM review actions (Finalize / Return) - Supervisor-level
+  // SE/PM review actions (Finalize / Return)
   List<String> _finalizeSupervisorDayPaths() => const [
+        // preferred (clean separation) if you add se.js
         '/api/v1/se/supervisors/{SUP}/finalize-day',
+        // existing backend route
         '/api/v1/supervisor/finalize-supervisor-day',
       ];
 
   List<String> _returnSupervisorDayPaths() => const [
+        // preferred (clean separation) if you add se.js
         '/api/v1/se/supervisors/{SUP}/return-day',
+        // optional future alias
         '/api/v1/supervisor/return-supervisor-day',
       ];
-
-  // Worker-level actions (SE)
-  String _returnWorkerPath(String workerId) =>
-      '/api/v1/se/supervisors/${widget.supervisorId}/workers/$workerId/return-day?work_date=$_workDate';
-
-  String _finalizeWorkerPath(String workerId) =>
-      '/api/v1/se/supervisors/${widget.supervisorId}/workers/$workerId/finalize-day?work_date=$_workDate';
 
   String _roleUpper(AppState app) => (app.role).toUpperCase();
   bool _isSEPM(String role) => role == 'SE' || role == 'PM';
@@ -180,23 +94,31 @@ class _SupervisorDayWorkersPageState extends State<SupervisorDayWorkersPage> {
   List<Map<String, dynamic>> _extractWorkers(dynamic json) {
     if (json is! Map) return const [];
 
+    // api.getJson() may return:
+    // A) { success: true, data: { workers: [...] } }
+    // B) { supervisor_id:..., work_date:..., workers: [...] }   (already-unwrapped data)
     final dynamic data = (json['data'] is Map) ? json['data'] : json;
+
     if (data is! Map) return const [];
 
     final dynamic list = data['workers'];
 
     if (list is List) {
-      return list.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
+      return list
+          .whereType<Map>()
+          .map((m) => Map<String, dynamic>.from(m))
+          .toList();
     }
 
     return const [];
   }
 
+
   // --- load ---
   @override
   void initState() {
     super.initState();
-    _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
   @override
@@ -215,6 +137,9 @@ class _SupervisorDayWorkersPageState extends State<SupervisorDayWorkersPage> {
     });
 
     try {
+      final app = context.read<AppState>();
+      final role = _roleUpper(app);
+
       // Base list: workers + day_status (from monitor always)
       final json = await widget.api.getJson(
         '/api/v1/monitor/supervisors/${widget.supervisorId}/workers',
@@ -224,6 +149,7 @@ class _SupervisorDayWorkersPageState extends State<SupervisorDayWorkersPage> {
       final baseWorkers = _extractWorkers(json);
 
       // Enrich each worker with assignments/day/summary (sessions_count, total_minutes, open_task)
+      // Also allow SE to view correct counts (requires backend access for assignments summary).
       final enriched = await Future.wait(baseWorkers.map((w) async {
         final empId = (w['employee_id'] ?? '').toString();
 
@@ -234,21 +160,23 @@ class _SupervisorDayWorkersPageState extends State<SupervisorDayWorkersPage> {
             query: {'work_date': _workDate},
           );
 
+          // support {success,data:{...}} OR direct {...}
           if (s is Map && s['data'] is Map) {
             summary = Map<String, dynamic>.from(s['data'] as Map);
           } else if (s is Map) {
             summary = Map<String, dynamic>.from(s);
           }
         } catch (_) {
-          // ignore per-worker summary errors
+          // don’t fail the whole page if one worker summary fails
         }
 
         return <String, dynamic>{
           ...w,
           'sessions_count': summary['sessions_count'] ?? 0,
           'total_minutes': summary['total_minutes'] ?? 0,
-          'open_task': summary['open_task'],
-        }; 
+          'open_task': summary['open_task'], // Map or null
+          '_role': role,
+        };
       }).toList());
 
       setState(() {
@@ -263,7 +191,11 @@ class _SupervisorDayWorkersPageState extends State<SupervisorDayWorkersPage> {
     }
   }
 
-  Future<void> _closeOpenTask({required String employeeId, required Map<String, dynamic>? openTask}) async {
+  // --- actions ---
+  Future<void> _closeOpenTask({
+    required String employeeId,
+    required Map<String, dynamic>? openTask,
+  }) async {
     if (busyIds.contains(employeeId)) return;
     if (openTask == null) return;
 
@@ -272,6 +204,7 @@ class _SupervisorDayWorkersPageState extends State<SupervisorDayWorkersPage> {
       final body = <String, dynamic>{
         'employee_id': employeeId,
         'work_date': widget.workDate,
+        // open_task may contain project_id/task_id/start_ts
         'project_id': openTask['project_id'],
         'task_id': openTask['task_id'],
         'start_ts': openTask['start_ts'],
@@ -309,70 +242,27 @@ class _SupervisorDayWorkersPageState extends State<SupervisorDayWorkersPage> {
     }
   }
 
-  // ----------------------------
-  // SE worker-level actions
-  // ----------------------------
-  Future<void> _seReturnWorkerDay(String workerId, String dayStatus) async {
-    if (StatusUI.normalize(dayStatus) != 'CLOSED') return;
-    final k = 'return:$workerId';
-    if (busyIds.contains(k)) return;
-
-    setState(() => busyIds.add(k));
-    try {
-      await widget.api.postJson(_returnWorkerPath(workerId), body: {});
-      _toast('Returned $workerId');
-      await _load();
-      widget.onDataChanged?.call();
-    } catch (e) {
-      _toast('Return worker failed: $e');
-    } finally {
-      if (mounted) setState(() => busyIds.remove(k));
-    }
-  }
-
-  Future<void> _seFinalizeWorkerDay(String workerId, String dayStatus, dynamic openTask) async {
-    if (StatusUI.normalize(dayStatus) != 'CLOSED') return;
-    if (openTask != null) {
-      _toast('Cannot finalize: worker has OPEN task. Supervisor must close open task first.');
-      return;
-    }
-
-    final k = 'finalize:$workerId';
-    if (busyIds.contains(k)) return;
-
-    setState(() => busyIds.add(k));
-    try {
-      await widget.api.postJson(_finalizeWorkerPath(workerId), body: {});
-      _toast('Finalized $workerId');
-      await _load();
-      widget.onDataChanged?.call();
-    } catch (e) {
-      _toast('Finalize worker failed: $e');
-    } finally {
-      if (mounted) setState(() => busyIds.remove(k));
-    }
-  }
-
-  // ----------------------------
-  // SE supervisor-level actions
-  // ----------------------------
   Future<void> _finalizeSupervisorDay() async {
     if (_headerBusy) return;
     setState(() => _headerBusy = true);
 
     try {
-      final paths = _finalizeSupervisorDayPaths().map((p) => p.replaceAll('{SUP}', widget.supervisorId)).toList();
+      // prefer /api/v1/se/... if present, else fallback to /api/v1/supervisor/finalize-supervisor-day
+      final paths = _finalizeSupervisorDayPaths()
+          .map((p) => p.replaceAll('{SUP}', widget.supervisorId))
+          .toList();
 
+      // body differs by endpoint:
+      // - se endpoint expects {work_date}
+      // - supervisor endpoint expects {supervisor_id, work_date}
       dynamic res;
       try {
-        // se endpoint expects {work_date}
         res = await widget.api.postJson(paths.first, body: {'work_date': widget.workDate});
       } catch (_) {
-        // fallback supervisor endpoint
         res = await widget.api.postJson(paths.last, body: {'supervisor_id': widget.supervisorId, 'work_date': widget.workDate});
       }
 
-      _toast('Finalize done');
+      _toast('Finalized: ${res is Map ? (res['data'] ?? '') : ''}');
       await _load();
       widget.onDataChanged?.call();
     } catch (e) {
@@ -388,6 +278,7 @@ class _SupervisorDayWorkersPageState extends State<SupervisorDayWorkersPage> {
 
     try {
       final paths = _returnSupervisorDayPaths().map((p) => p.replaceAll('{SUP}', widget.supervisorId)).toList();
+      // Only se endpoint is defined in our plan; if missing, show a clear message.
       await widget.api.postJson(paths.first, body: {'work_date': widget.workDate});
       _toast('Returned to Supervisor');
       await _load();
@@ -399,10 +290,42 @@ class _SupervisorDayWorkersPageState extends State<SupervisorDayWorkersPage> {
     }
   }
 
-  // ----------------------------
-  // Details dialog
-  // ----------------------------
-  Future<void> _showWorkerDetails(String employeeId, String fullName) async {
+  
+  Future<void> _seReturnWorker(String employeeId) async {
+    if (busyIds.contains(employeeId)) return;
+    setState(() => busyIds.add(employeeId));
+    try {
+      final path =
+          '/api/v1/se/supervisors/${widget.supervisorId}/workers/$employeeId/return-day?work_date=$_workDate';
+      await widget.api.postJson(path, body: {});
+      _toast('Returned $employeeId to Supervisor');
+      await _load();
+      widget.onDataChanged?.call();
+    } catch (e) {
+      _toast('Return worker failed: $e');
+    } finally {
+      setState(() => busyIds.remove(employeeId));
+    }
+  }
+
+  Future<void> _seFinalizeWorker(String employeeId) async {
+    if (busyIds.contains(employeeId)) return;
+    setState(() => busyIds.add(employeeId));
+    try {
+      final path =
+          '/api/v1/se/supervisors/${widget.supervisorId}/workers/$employeeId/finalize-day?work_date=$_workDate';
+      await widget.api.postJson(path, body: {});
+      _toast('Finalized $employeeId');
+      await _load();
+      widget.onDataChanged?.call();
+    } catch (e) {
+      _toast('Finalize worker failed: $e');
+    } finally {
+      setState(() => busyIds.remove(employeeId));
+    }
+  }
+
+Future<void> _showWorkerDetails(String employeeId, String fullName) async {
     try {
       final json = await widget.api.getJson(
         '/api/v1/monitor/worker/$employeeId/day',
@@ -411,24 +334,8 @@ class _SupervisorDayWorkersPageState extends State<SupervisorDayWorkersPage> {
 
       Map<String, dynamic> data = {};
       if (json is Map && json['data'] is Map) data = Map<String, dynamic>.from(json['data'] as Map);
-
-      final sessions = (data['sessions'] is List)
-          ? (data['sessions'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
-          : <Map<String, dynamic>>[];
-
-      final scans = (data['scans'] is List)
-          ? (data['scans'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
-          : <Map<String, dynamic>>[];
-
-      // Group sessions by task
-      final Map<String, List<Map<String, dynamic>>> sessionsByTask = {};
-      for (final s in sessions) {
-        final pid = (s['project_id'] ?? '').toString();
-        final tid = (s['task_id'] ?? '').toString();
-        final tname = (s['task_name'] ?? s['task_title'] ?? s['task_desc'] ?? s['name'] ?? '').toString();
-        final key = '$pid|$tid|$tname';
-        sessionsByTask.putIfAbsent(key, () => []).add(s);
-      }
+      final sessions = (data['sessions'] is List) ? (data['sessions'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList() : <Map<String, dynamic>>[];
+      final scans = (data['scans'] is List) ? (data['scans'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList() : <Map<String, dynamic>>[];
 
       if (!mounted) return;
 
@@ -436,54 +343,85 @@ class _SupervisorDayWorkersPageState extends State<SupervisorDayWorkersPage> {
         context: context,
         builder: (_) {
           return AlertDialog(
-            title: Text('$employeeId — $fullName ($_workDate)'),
+            title: Text('$employeeId — $fullName (${widget.workDate})'),
             content: SizedBox(
-              width: 760,
+              width: 720,
               child: SingleChildScrollView(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Sessions by Task', style: TextStyle(fontWeight: FontWeight.w800)),
+                    
+                    const Text('Sessions', style: TextStyle(fontWeight: FontWeight.w700)),
                     const SizedBox(height: 8),
-                    if (sessionsByTask.isEmpty) const Text('No sessions'),
-                    for (final entry in sessionsByTask.entries) ...[
-                      Builder(builder: (_) {
-                        final parts = entry.key.split('|');
-                        final pid = parts.isNotEmpty ? parts[0] : '';
-                        final tid = parts.length > 1 ? parts[1] : '';
-                        final tname = parts.length > 2 ? parts.sublist(2).join('|') : '';
-                        final list = entry.value;
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 10),
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.black12),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Task: $pid / $tid', style: const TextStyle(fontWeight: FontWeight.w800)),
-                              if (tname.isNotEmpty) Text('Name: $tname'),
+                    if (sessions.isEmpty) const Text('No sessions'),
+                    if (sessions.isNotEmpty) ...[
+                      // Group by project/task to show a cleaner review for SE/PM
+                      Builder(builder: (context) {
+                        final Map<String, Map<String, dynamic>> byTask = {};
+                        for (final s in sessions) {
+                          final projectId = (s['project_id'] ?? '').toString();
+                          final taskId = (s['task_id'] ?? '').toString();
+                          final taskName = (s['task_name'] ?? s['task_title'] ?? s['task_desc'] ?? '').toString();
+                          final key = '$projectId|$taskId';
+                          final mins = (s['duration_minutes'] ?? 0) is int
+                              ? (s['duration_minutes'] as int)
+                              : int.tryParse('${s['duration_minutes'] ?? 0}') ?? 0;
+
+                          byTask.putIfAbsent(key, () => {
+                                'project_id': projectId,
+                                'task_id': taskId,
+                                'task_name': taskName,
+                                'sessions': <Map<String, dynamic>>[],
+                                'total_minutes': 0,
+                              });
+
+                          (byTask[key]!['sessions'] as List).add(s);
+                          byTask[key]!['total_minutes'] =
+                              (byTask[key]!['total_minutes'] as int) + mins;
+                        }
+
+                        final rows = byTask.values.toList()
+                          ..sort((a, b) {
+                            final ap = (a['project_id'] ?? '').toString();
+                            final bp = (b['project_id'] ?? '').toString();
+                            final at = (a['task_id'] ?? '').toString();
+                            final bt = (b['task_id'] ?? '').toString();
+                            final c = ap.compareTo(bp);
+                            return c != 0 ? c : at.compareTo(bt);
+                          });
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            for (final r in rows) ...[
+                              Text(
+                                '• ${r['project_id']} / ${r['task_id']}'
+                                '${(r['task_name'] as String).isNotEmpty ? ' — ${r['task_name']}' : ''}'
+                                '  |  Sessions: ${(r['sessions'] as List).length}'
+                                '  |  Minutes: ${r['total_minutes']}',
+                              ),
                               const SizedBox(height: 6),
-                              for (final s in list) ...[
+                              for (final s in (r['sessions'] as List).cast<Map<String, dynamic>>()) ...[
                                 Text(
-                                  '• start: ${s['start_ts']}  end: ${s['end_ts'] ?? '-'}  |  min: ${s['duration_minutes'] ?? 0}  |  status: ${s['status']}',
+                                  '   - start: ${s['start_ts']}  end: ${s['end_ts'] ?? '-'}'
+                                  '  |  min: ${s['duration_minutes'] ?? 0}  |  status: ${s['status']}',
+                                  style: TextStyle(color: Colors.black.withOpacity(0.75)),
                                 ),
-                              ]
+                                const SizedBox(height: 2),
+                              ],
+                              const SizedBox(height: 8),
                             ],
-                          ),
+                          ],
                         );
                       }),
                     ],
                     const SizedBox(height: 12),
-                    const Text('Scans', style: TextStyle(fontWeight: FontWeight.w800)),
+
+                    const Text('Scans', style: TextStyle(fontWeight: FontWeight.w700)),
                     const SizedBox(height: 8),
                     if (scans.isEmpty) const Text('No scans'),
                     for (final sc in scans) ...[
-                      Text(
-                        '• ${(sc['project_id'] ?? '')}/${(sc['task_id'] ?? '')}  |  status: ${(sc['scan_status'] ?? sc['status'] ?? '')}  |  ts: ${(sc['created_at'] ?? sc['scan_ts'] ?? '')}',
-                      ),
+                      Text('• ${sc['project_id']} / ${sc['task_id']}  |  status: ${sc['scan_status'] ?? sc['status'] ?? ''}  |  ts: ${sc['created_at'] ?? sc['scan_ts'] ?? ''}'),
                       const SizedBox(height: 4),
                     ],
                   ],
@@ -517,6 +455,9 @@ class _SupervisorDayWorkersPageState extends State<SupervisorDayWorkersPage> {
     if (error != null) return Center(child: Text('Error: $error'));
     if (rows.isEmpty) return const Center(child: Text('No workers found.'));
 
+    // Header actions:
+    // - SE/PM: finalize / return for the whole supervisor day
+    // - Supervisor: informational header only (actions per worker)
     return Column(
       children: [
         Container(
@@ -525,45 +466,29 @@ class _SupervisorDayWorkersPageState extends State<SupervisorDayWorkersPage> {
             color: Colors.white.withOpacity(0.65),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Work date: ${widget.workDate}  |  Supervisor: ${widget.supervisorId}  |  Role: $role',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  if (_headerBusy) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
-                  if (seMode) ...[
-                    const SizedBox(width: 10),
-                    OutlinedButton.icon(
-                      onPressed: _headerBusy ? null : _returnSupervisorDay,
-                      icon: const Icon(Icons.undo, size: 18),
-                      label: const Text('Return Supervisor Day'),
-                    ),
-                    const SizedBox(width: 10),
-                    ElevatedButton.icon(
-                      onPressed: _headerBusy ? null : _finalizeSupervisorDay,
-                      icon: const Icon(Icons.verified, size: 18),
-                      label: const Text('Finalize Supervisor Day'),
-                    ),
-                  ],
-                ],
+              Expanded(
+                child: Text(
+                  'Work date: ${widget.workDate}  |  Supervisor: ${widget.supervisorId}  |  Role: $role',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
               ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 12,
-                runSpacing: 8,
-                children: const [
-                  _LegendItem(label: 'OPEN', color: Color(0xFFF4C542)),
-                  _LegendItem(label: 'CLOSED', color: Color(0xFF3B82F6)),
-                  _LegendItem(label: 'RETURNED', color: Color(0xFFFF8A3D)),
-                  _LegendItem(label: 'FINALIZED', color: Color(0xFF22C55E)),
-                ],
-              ),
+              if (_headerBusy) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+              if (seMode) ...[
+                const SizedBox(width: 10),
+                OutlinedButton.icon(
+                  onPressed: _headerBusy ? null : _returnSupervisorDay,
+                  icon: const Icon(Icons.undo, size: 18),
+                  label: const Text('Return to Supervisor'),
+                ),
+                const SizedBox(width: 10),
+                ElevatedButton.icon(
+                  onPressed: _headerBusy ? null : _finalizeSupervisorDay,
+                  icon: const Icon(Icons.verified, size: 18),
+                  label: const Text('Finalize Supervisor Day'),
+                ),
+              ],
             ],
           ),
         ),
@@ -576,8 +501,7 @@ class _SupervisorDayWorkersPageState extends State<SupervisorDayWorkersPage> {
               final w = rows[i];
               final empId = (w['employee_id'] ?? '').toString();
               final fullName = (w['full_name'] ?? '').toString();
-              final rawStatus = (w['day_status'] ?? '').toString();
-              final dayStatus = StatusUI.normalize(rawStatus);
+              final dayStatus = (w['day_status'] ?? '').toString().toUpperCase();
 
               final sessionsCount = w['sessions_count'] ?? 0;
               final totalMinutes = w['total_minutes'] ?? 0;
@@ -585,16 +509,11 @@ class _SupervisorDayWorkersPageState extends State<SupervisorDayWorkersPage> {
 
               final busy = busyIds.contains(empId);
 
-              // Supervisor rules
+              // Rules:
+              // - Supervisor can close-open-task if open_task exists
+              // - Supervisor can close day only if OPEN and no open_task
               final canCloseOpenTask = supervisorMode && openTask != null && dayStatus == 'OPEN' && !busy;
               final canCloseDay = supervisorMode && dayStatus == 'OPEN' && openTask == null && !busy;
-
-              // SE worker-level rules
-              final returnKey = 'return:$empId';
-              final finalizeKey = 'finalize:$empId';
-              final workerBusy = busyIds.contains(returnKey) || busyIds.contains(finalizeKey);
-              final canSeReturn = seMode && dayStatus == 'CLOSED' && !workerBusy;
-              final canSeFinalize = seMode && dayStatus == 'CLOSED' && openTask == null && !workerBusy;
 
               return Card(
                 child: Padding(
@@ -607,10 +526,10 @@ class _SupervisorDayWorkersPageState extends State<SupervisorDayWorkersPage> {
                           Expanded(
                             child: Text(
                               '$empId — $fullName',
-                              style: const TextStyle(fontWeight: FontWeight.w800),
+                              style: const TextStyle(fontWeight: FontWeight.w700),
                             ),
                           ),
-                          statusBadge(dayStatus),
+                          Text('Status: $dayStatus', style: TextStyle(color: dayStatus == 'OPEN' ? Colors.green : Colors.black54)),
                           const SizedBox(width: 10),
                           IconButton(
                             tooltip: 'Details',
@@ -630,7 +549,7 @@ class _SupervisorDayWorkersPageState extends State<SupervisorDayWorkersPage> {
                         ],
                       ),
                       const SizedBox(height: 10),
-
+                      // Actions row
                       if (supervisorMode)
                         Row(
                           children: [
@@ -638,7 +557,9 @@ class _SupervisorDayWorkersPageState extends State<SupervisorDayWorkersPage> {
                               onPressed: canCloseOpenTask
                                   ? () => _closeOpenTask(
                                         employeeId: empId,
-                                        openTask: (openTask is Map) ? Map<String, dynamic>.from(openTask) : null,
+                                        openTask: (openTask is Map)
+                                            ? Map<String, dynamic>.from(openTask)
+                                            : null,
                                       )
                                   : null,
                               icon: const Icon(Icons.task_alt, size: 18),
@@ -652,39 +573,51 @@ class _SupervisorDayWorkersPageState extends State<SupervisorDayWorkersPage> {
                             ),
                             if (busy) ...[
                               const SizedBox(width: 10),
-                              const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                              const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
                             ],
                           ],
                         ),
 
                       if (seMode) ...[
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 8),
                         Row(
                           children: [
                             OutlinedButton.icon(
-                              onPressed: canSeReturn ? () => _seReturnWorkerDay(empId, dayStatus) : null,
+                              onPressed: (!busy && dayStatus == 'CLOSED')
+                                  ? () => _seReturnWorker(empId)
+                                  : null,
                               icon: const Icon(Icons.undo, size: 18),
                               label: const Text('Return Worker Day'),
                             ),
                             const SizedBox(width: 10),
                             ElevatedButton.icon(
-                              onPressed: canSeFinalize ? () => _seFinalizeWorkerDay(empId, dayStatus, openTask) : null,
+                              onPressed: (!busy && dayStatus == 'CLOSED' && openTask == null)
+                                  ? () => _seFinalizeWorker(empId)
+                                  : null,
                               icon: const Icon(Icons.verified, size: 18),
                               label: const Text('Finalize Worker Day'),
                             ),
-                            if (workerBusy) ...[
+                            if (busy) ...[
                               const SizedBox(width: 10),
-                              const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                              const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
                             ],
                           ],
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'SE/PM Review: use per-worker Return/Finalize. Use top buttons for bulk actions.',
+                          'SE/PM Review: Return is enabled only for CLOSED days. Finalize requires CLOSED + no open task.',
                           style: TextStyle(color: Colors.black.withOpacity(0.55)),
                         ),
                       ],
-                    ],
+],
                   ),
                 ),
               );
