@@ -11,8 +11,8 @@ class WorkItemNode {
   final DateTime? plannedEnd;
   final int? plannedDurationDays;
 
-  final String planStatus; // work_items.status (e.g. DRAFT)
-  final String taskStatus; // work_items.task_status (e.g. ACTIVE/IN_PROGRESS/INACTIVE)
+  final String planStatus;
+  final String taskStatus;
 
   WorkItemNode({
     required this.id,
@@ -46,7 +46,6 @@ class ProjectTreeWidget extends StatelessWidget {
     for (final n in items) {
       m.putIfAbsent(n.parentId, () => <WorkItemNode>[]).add(n);
     }
-    // stable ordering by item_code
     for (final k in m.keys) {
       m[k]!.sort((a, b) => a.code.compareTo(b.code));
     }
