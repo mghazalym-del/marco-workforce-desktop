@@ -118,94 +118,147 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   Widget _buildOverviewTab(BuildContext context) {
-    if (loading) return const Center(child: CircularProgressIndicator());
-    if (error != null) return Center(child: Text('Error: $error'));
-    if (data == null) return const Center(child: Text('No data for the selected date.'));
+  if (loading) return const Center(child: CircularProgressIndicator());
+  if (error != null) return Center(child: Text('Error: $error'));
+  if (data == null) return const Center(child: Text('No data for the selected date.'));
 
-    final dayCounts = (data!['day_counts'] is Map)
-        ? Map<String, dynamic>.from(data!['day_counts'] as Map)
-        : <String, dynamic>{};
+  final dayCounts = (data!['day_counts'] is Map)
+      ? Map<String, dynamic>.from(data!['day_counts'] as Map)
+      : <String, dynamic>{};
 
-    final scanCounts = (data!['scan_counts'] is Map)
-        ? Map<String, dynamic>.from(data!['scan_counts'] as Map)
-        : <String, dynamic>{};
+  final scanCounts = (data!['scan_counts'] is Map)
+      ? Map<String, dynamic>.from(data!['scan_counts'] as Map)
+      : <String, dynamic>{};
 
-    final openDays = _asInt(dayCounts['open_days']);
-    final closedDays = _asInt(dayCounts['closed_days']);
+  final openDays = _asInt(dayCounts['open_days']);
+  final closedDays = _asInt(dayCounts['closed_days']);
 
-    final totalScans = _asInt(scanCounts['total_scans']);
-    final acceptedScans = _asInt(scanCounts['accepted_scans']);
-    final rejectedScans = _asInt(scanCounts['rejected_scans']);
-    final offlineScans = _asInt(scanCounts['offline_scans']);
+  final totalScans = _asInt(scanCounts['total_scans']);
+  final acceptedScans = _asInt(scanCounts['accepted_scans']);
+  final rejectedScans = _asInt(scanCounts['rejected_scans']);
+  final offlineScans = _asInt(scanCounts['offline_scans']);
 
-    final topTasksRaw = data!['top_tasks'] ?? const [];
-    final topTasks = _mapList(topTasksRaw).map((t) {
-      return {
-        'project_id': (t['project_id'] ?? '').toString(),
-        'task_id': (t['task_id'] ?? '').toString(),
-        'scans': _asInt(t['scans']),
-      };
-    }).toList();
+  final topTasksRaw = data!['top_tasks'] ?? const [];
+  final topTasks = _mapList(topTasksRaw).map((t) {
+    return {
+      'project_id': (t['project_id'] ?? '').toString(),
+      'task_id': (t['task_id'] ?? '').toString(),
+      'scans': _asInt(t['scans']),
+    };
+  }).toList();
 
-    return RefreshIndicator(
-      onRefresh: () async => _load(context.read<AppState>().selectedDateStr),
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              _kpi('Open Days', openDays),
-              _kpi('Closed Days', closedDays),
-              _kpi('Total Scans', totalScans),
-              _kpi('Accepted Scans', acceptedScans),
-              _kpi('Rejected Scans', rejectedScans),
-              _kpi('Offline Scans', offlineScans),
-            ],
+  return RefreshIndicator(
+    onRefresh: () async => _load(context.read<AppState>().selectedDateStr),
+    child: ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        FutureBuilder(
+          future: widget.api.getJson(
+            '/monitor/se-alerts',
+            query: {'work_date': context.read<AppState>().selectedDateStr},
           ),
-          const SizedBox(height: 16),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Top Tasks', style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 8),
-                  if (topTasks.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      child: Text('No task activity for the selected date.'),
-                    )
-                  else
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: DataTable(
-                        columns: const [
-                          DataColumn(label: Text('project_id')),
-                          DataColumn(label: Text('task_id')),
-                          DataColumn(label: Text('scans')),
-                        ],
-                        rows: topTasks.map((r) {
-                          return DataRow(
-                            cells: [
-                              DataCell(Text(r['project_id'].toString())),
-                              DataCell(Text(r['task_id'].toString())),
-                              DataCell(Text(r['scans'].toString())),
+          builder: (context, snap) {
+            if (!snap.hasData) return const SizedBox();
+
+            final json = snap.data;
+            if (json is! Map || json['data'] == null) {
+              return const SizedBox();
+            }
+
+            final dataMap = json['data'];
+            if (dataMap is! Map) return const SizedBox();
+
+            final alertsRaw = dataMap['alerts'];
+            if (alertsRaw is! List || alertsRaw.isEmpty) {
+              return const SizedBox();
+            }
+
+            return Column(
+              children: [
+                Card(
+                  color: Colors.orange.withOpacity(0.15),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: alertsRaw.map<Widget>((a) {
+                        final item = a is Map ? Map<String, dynamic>.from(a) : <String, dynamic>{};
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(Icons.warning_amber, color: Colors.orange),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(item['message']?.toString() ?? ''),
+                              ),
                             ],
-                          );
-                        }).toList(),
-                      ),
+                          ),
+                        );
+                      }).toList(),
                     ),
-                ],
-              ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+            );
+          },
+        ),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            _kpi('Open Days', openDays),
+            _kpi('Closed Days', closedDays),
+            _kpi('Total Scans', totalScans),
+            _kpi('Accepted Scans', acceptedScans),
+            _kpi('Rejected Scans', rejectedScans),
+            _kpi('Offline Scans', offlineScans),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Top Tasks', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                if (topTasks.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: Text('No task activity for the selected date.'),
+                  )
+                else
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: DataTable(
+                      columns: const [
+                        DataColumn(label: Text('project_id')),
+                        DataColumn(label: Text('task_id')),
+                        DataColumn(label: Text('scans')),
+                      ],
+                      rows: topTasks.map((r) {
+                        return DataRow(
+                          cells: [
+                            DataCell(Text(r['project_id'].toString())),
+                            DataCell(Text(r['task_id'].toString())),
+                            DataCell(Text(r['scans'].toString())),
+                          ],
+                        );
+                      }).toList(),
+                    ),
+                  ),
+              ],
             ),
           ),
-        ],
-      ),
-    );
-  }
+        ),
+      ],
+    ),
+  );
+}
 
   @override
   Widget build(BuildContext context) {

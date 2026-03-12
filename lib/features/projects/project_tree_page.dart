@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:io';
-
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
@@ -82,6 +82,76 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
     } catch (_) {
       return taskId;
     }
+  }
+
+  Map<String, dynamic>? _tryExtractJsonFromError(Object e) {
+    final raw = e.toString();
+    final firstBrace = raw.indexOf('{');
+    if (firstBrace < 0) return null;
+
+    final jsonPart = raw.substring(firstBrace);
+
+    try {
+      final decoded = jsonDecode(jsonPart);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) return decoded.cast<String, dynamic>();
+    } catch (_) {}
+
+    return null;
+  }
+
+  String _formatCloseReleaseError(Map<String, dynamic> body) {
+    final data = body["data"];
+    if (data is! Map) {
+      final err = body["error"];
+      if (err is Map) {
+        return err["message"]?.toString() ?? "Close release failed.";
+      }
+      return "Close release failed.";
+    }
+
+    final releaseId = data["release_id"]?.toString() ?? "-";
+    final projectId = data["project_id"]?.toString() ?? "-";
+    final taskId = data["task_id"]?.toString() ?? "-";
+    final taskName = _taskNameFor(taskId);
+    final blockers = data["blockers"];
+
+    final buffer = StringBuffer();
+    buffer.writeln("Cannot close release because workers still have open tasks.");
+    buffer.writeln("");
+    buffer.writeln("Release: $releaseId");
+    buffer.writeln("Project: $projectId");
+    buffer.writeln("Task: $taskId - $taskName");
+
+    if (blockers is List && blockers.isNotEmpty) {
+      for (final b in blockers) {
+        if (b is! Map) continue;
+
+        final supId = b["supervisor_employee_id"]?.toString() ?? "-";
+        final supName = b["supervisor_name"]?.toString() ?? "";
+        final openWorkersCount = b["open_workers_count"]?.toString() ?? "0";
+        final workers = b["workers"];
+
+        buffer.writeln("");
+        buffer.writeln(
+          supName.isEmpty
+              ? "Supervisor: $supId"
+              : "Supervisor: $supId - $supName",
+        );
+        buffer.writeln("Open workers: $openWorkersCount");
+
+        if (workers is List && workers.isNotEmpty) {
+          for (final w in workers) {
+            if (w is! Map) continue;
+            final empId = w["employee_id"]?.toString() ?? "-";
+            final fullName = w["full_name"]?.toString() ?? "";
+            buffer.writeln(fullName.isEmpty ? "• $empId" : "• $empId - $fullName");
+          }
+        }
+      }
+    }
+
+    return buffer.toString().trim();
   }
 
   void _popup(String title, String message) {
@@ -239,8 +309,8 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
     final seName = release["se_name"]?.toString() ?? "";
     final minWorkers = release["min_workers"]?.toString() ?? "0";
     final maxWorkers = release["max_workers"]?.toString() ?? "-";
-
-    final qrValue = "MARCO|RLS|$releaseId";
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+    final qrValue = "$releaseId|$today";
 
     final fontData = await rootBundle.load("assets/fonts/NotoSans-Regular.ttf");
     final ttf = pw.Font.ttf(fontData);
@@ -396,6 +466,18 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
                                         );
                                       } catch (e) {
                                         if (!mounted) return;
+
+                                        final parsed = _tryExtractJsonFromError(e);
+                                        if (parsed != null &&
+                                            parsed["error"] is Map &&
+                                            parsed["error"]["code"]?.toString() == "OPEN_TASKS_EXIST") {
+                                          _popup(
+                                            "Cannot Close Release",
+                                            _formatCloseReleaseError(parsed),
+                                          );
+                                          return;
+                                        }
+
                                         _popup("Close Release Failed", e.toString());
                                       }
                                     }
