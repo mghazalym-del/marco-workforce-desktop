@@ -1,4 +1,3 @@
-import '../features/workforce_structure/workforce_structure_page.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -11,10 +10,6 @@ import '../features/activity/activity_page.dart';
 import '../features/supervisors/supervisor_days_page.dart';
 import '../features/projects/projects_page.dart';
 import '../features/admin/employees_admin_page.dart';
-
-// NEW
-import '../features/cost_control/cost_control_option1_page.dart';
-import '../features/cost_control/cost_control_option2_page.dart';
 
 class AppShell extends StatefulWidget {
   final ApiClient api;
@@ -51,11 +46,6 @@ class _AppShellState extends State<AppShell> {
       SupervisorDaysPage(api: widget.api),
       ProjectsPage(api: widget.api),
       EmployeesAdminPage(api: widget.api),
-
-      // NEW temporary demo menu items
-      const CostControlOption1Page(),
-      const CostControlOption2Page(),
-      const WorkforceStructurePage(),
     ];
 
     final labels = <String>[
@@ -65,11 +55,6 @@ class _AppShellState extends State<AppShell> {
       'Supervisors',
       'Projects',
       'Admin',
-
-      // NEW temporary demo menu items
-      'Cost Opt 1',
-      'Cost Opt 2',
-      'Workforce',
     ];
 
     final icons = <IconData>[
@@ -79,11 +64,6 @@ class _AppShellState extends State<AppShell> {
       Icons.supervisor_account,
       Icons.account_tree,
       Icons.admin_panel_settings,
-
-      // NEW temporary demo menu items
-      Icons.request_quote,
-      Icons.analytics,
-      Icons.account_tree,
     ];
 
     return Scaffold(
@@ -130,10 +110,7 @@ class _AppShellState extends State<AppShell> {
                     children: [
                       Text(
                         labels[_index],
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                        ),
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                       ),
                       const Spacer(),
                       Text('Role: ${app.role}'),
@@ -148,8 +125,7 @@ class _AppShellState extends State<AppShell> {
                         onPressed: () async {
                           await app.logout();
                           if (!mounted) return;
-                          Navigator.of(context)
-                              .pushNamedAndRemoveUntil('/', (_) => false);
+                          Navigator.of(context).pushNamedAndRemoveUntil('/', (_) => false);
                         },
                         icon: const Icon(Icons.logout, size: 18),
                         label: const Text('Logout'),
@@ -183,8 +159,7 @@ class _RailItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color =
-        selected ? Theme.of(context).colorScheme.primary : Colors.black54;
+    final color = selected ? Theme.of(context).colorScheme.primary : Colors.black54;
 
     return InkWell(
       onTap: onTap,
@@ -196,12 +171,7 @@ class _RailItem extends StatelessWidget {
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color: selected
-                    ? Theme.of(context)
-                        .colorScheme
-                        .primary
-                        .withOpacity(0.12)
-                    : Colors.transparent,
+                color: selected ? Theme.of(context).colorScheme.primary.withOpacity(0.12) : Colors.transparent,
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Icon(icon, color: color),

@@ -240,7 +240,8 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
     final minWorkers = release["min_workers"]?.toString() ?? "0";
     final maxWorkers = release["max_workers"]?.toString() ?? "-";
 
-    final qrValue = "MARCO|RLS|$releaseId";
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+    final qrValue = "$releaseId|$today";
 
     final fontData = await rootBundle.load("assets/fonts/NotoSans-Regular.ttf");
     final ttf = pw.Font.ttf(fontData);

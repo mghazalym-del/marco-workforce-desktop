@@ -147,66 +147,439 @@ class _DashboardPageState extends State<DashboardPage>
       };
     }).toList();
 
-    return RefreshIndicator(
-      onRefresh: () async => _load(context.read<AppState>().selectedDateStr),
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              _kpi('Open Days', openDays),
-              _kpi('Closed Days', closedDays),
-              _kpi('Total Scans', totalScans),
-              _kpi('Accepted Scans', acceptedScans),
-              _kpi('Rejected Scans', rejectedScans),
-              _kpi('Offline Scans', offlineScans),
-            ],
+    Color heatColorForAlerts(String type) {
+      switch (type) {
+        case 'UNDER_MIN':
+        case 'OVER_CAPACITY':
+        case 'SUPERVISOR_NOT_CLOSED':
+        case 'NO_SCAN':
+          return Colors.red;
+        case 'FULL':
+        case 'OPEN_SESSION':
+          return Colors.orange;
+        default:
+          return Colors.green;
+      }
+    }
+
+    Widget execCard({
+      required String title,
+      required String value,
+      required Color color,
+      required IconData icon,
+    }) {
+      return SizedBox(
+        width: 220,
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.10),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: color.withOpacity(0.22)),
           ),
-          const SizedBox(height: 16),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Top Tasks', style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 8),
-                  if (topTasks.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      child: Text('No task activity for the selected date.'),
-                    )
-                  else
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: DataTable(
-                        columns: const [
-                          DataColumn(label: Text('project_id')),
-                          DataColumn(label: Text('task_id')),
-                          DataColumn(label: Text('scans')),
-                        ],
-                        rows: topTasks.map((r) {
-                          return DataRow(
-                            cells: [
-                              DataCell(Text(r['project_id'].toString())),
-                              DataCell(Text(r['task_id'].toString())),
-                              DataCell(Text(r['scans'].toString())),
-                            ],
-                          );
-                        }).toList(),
+          child: Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: color.withOpacity(0.18),
+                child: Icon(icon, color: color),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: const TextStyle(fontSize: 12)),
+                    const SizedBox(height: 4),
+                    Text(
+                      value,
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () async => _load(context.read<AppState>().selectedDateStr),
+      child: FutureBuilder(
+        future: widget.api.getJson(
+          '/monitor/se-alerts',
+          query: {'work_date': context.read<AppState>().selectedDateStr},
+        ),
+        builder: (context, snap) {
+          List<Map<String, dynamic>> alerts = [];
+
+          if (snap.hasData) {
+            final json = snap.data;
+            if (json is Map && json['data'] is Map) {
+              final dataMap = Map<String, dynamic>.from(json['data'] as Map);
+              final raw = dataMap['alerts'];
+              if (raw is List) {
+                alerts = raw
+                    .whereType<dynamic>()
+                    .map((e) => e is Map
+                        ? Map<String, dynamic>.from(e as Map)
+                        : <String, dynamic>{})
+                    .where((m) => m.isNotEmpty)
+                    .toList();
+              }
+            }
+          }
+
+          final alertCount = alerts.length;
+          final openSessionAlerts =
+              alerts.where((a) => a['type']?.toString() == 'OPEN_SESSION').length;
+          final capacityAlerts = alerts.where((a) {
+            final t = a['type']?.toString() ?? '';
+            return t == 'UNDER_MIN' || t == 'FULL' || t == 'OVER_CAPACITY';
+          }).length;
+          final complianceAlerts = alerts.where((a) {
+            final t = a['type']?.toString() ?? '';
+            return t == 'NO_SCAN' || t == 'SUPERVISOR_NOT_CLOSED';
+          }).length;
+
+          final systemHealthColor = alertCount > 0 ? Colors.orange : Colors.green;
+          final systemHealthText = alertCount > 0 ? 'ATTENTION REQUIRED' : 'NORMAL';
+
+          final riskMap = <String, String>{};
+          for (final a in alerts) {
+            final msg = a['message']?.toString() ?? '';
+            final type = a['type']?.toString() ?? '';
+            final match = RegExp(r'(PRJ\d+)\/(\d{2}-\d{2})').firstMatch(msg);
+            if (match != null) {
+              final key = '${match.group(1)}/${match.group(2)}';
+              final current = riskMap[key];
+              if (current == null) {
+                riskMap[key] = type;
+              } else {
+                final currentColor = heatColorForAlerts(current);
+                final newColor = heatColorForAlerts(type);
+                if ((newColor == Colors.red && currentColor != Colors.red) ||
+                    (newColor == Colors.orange && currentColor == Colors.green)) {
+                  riskMap[key] = type;
+                }
+              }
+            }
+          }
+
+          Widget heatLegend(Color color, String label) {
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(label),
+              ],
+            );
+          }
+
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              if (alertCount > 0) ...[
+                Card(
+                  color: Colors.orange.withOpacity(0.12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.notifications_active, color: Colors.orange),
+                            const SizedBox(width: 8),
+                            Text(
+                              'SE Alerts ($alertCount)',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        ...alerts.take(5).map((a) {
+                          final message = a['message']?.toString() ?? '';
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(Icons.warning_amber_rounded,
+                                    color: Colors.orange, size: 18),
+                                const SizedBox(width: 8),
+                                Expanded(child: Text(message)),
+                              ],
+                            ),
+                          );
+                        }),
+                        if (alerts.length > 5)
+                          Text(
+                            '... and ${alerts.length - 5} more alert(s)',
+                            style: TextStyle(
+                              color: Colors.grey.shade700,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ],
+              Card(
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: systemHealthColor.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: systemHealthColor.withOpacity(0.4)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        alertCount > 0
+                            ? Icons.warning_amber_rounded
+                            : Icons.check_circle,
+                        color: systemHealthColor,
+                        size: 30,
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        'SYSTEM HEALTH: $systemHealthText',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: systemHealthColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  _kpi('Open Days', openDays),
+                  _kpi('Closed Days', closedDays),
+                  _kpi('Total Scans', totalScans),
+                  _kpi('Accepted Scans', acceptedScans),
+                  _kpi('Rejected Scans', rejectedScans),
+                  _kpi('Offline Scans', offlineScans),
                 ],
               ),
-            ),
-          ),
-        ],
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  execCard(
+                    title: 'Alert Count',
+                    value: alertCount.toString(),
+                    color: alertCount > 0 ? Colors.orange : Colors.green,
+                    icon: Icons.notification_important_outlined,
+                  ),
+                  execCard(
+                    title: 'Live Workers',
+                    value: acceptedScans.toString(),
+                    color: Colors.teal,
+                    icon: Icons.groups_2_outlined,
+                  ),
+                  execCard(
+                    title: 'Open Sessions',
+                    value: openSessionAlerts.toString(),
+                    color: openSessionAlerts > 0 ? Colors.red : Colors.green,
+                    icon: Icons.play_circle_outline,
+                  ),
+                  execCard(
+                    title: 'Tasks At Risk',
+                    value: capacityAlerts.toString(),
+                    color: capacityAlerts > 0 ? Colors.deepOrange : Colors.green,
+                    icon: Icons.track_changes_outlined,
+                  ),
+                  execCard(
+                    title: 'Compliance Issues',
+                    value: complianceAlerts.toString(),
+                    color: complianceAlerts > 0 ? Colors.purple : Colors.green,
+                    icon: Icons.rule_folder_outlined,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Card(
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: acceptedScans > 0
+                        ? Colors.green.withOpacity(0.08)
+                        : Colors.red.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: acceptedScans > 0 ? Colors.green : Colors.red,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        acceptedScans > 0
+                            ? Icons.play_circle_fill
+                            : Icons.pause_circle,
+                        color: acceptedScans > 0 ? Colors.green : Colors.red,
+                        size: 28,
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        acceptedScans > 0
+                            ? 'WORKFORCE ACTIVE'
+                            : 'NO ACTIVITY DETECTED',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Live Workforce Heat Map',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 8),
+                      if (riskMap.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Text('No active task risks for the selected date.'),
+                        )
+                      else ...[
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 8,
+                          children: [
+                            heatLegend(Colors.green, 'Normal'),
+                            heatLegend(Colors.orange, 'Watch'),
+                            heatLegend(Colors.red, 'Critical'),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: riskMap.entries.map((e) {
+                            final color = heatColorForAlerts(e.value);
+                            final label = e.key;
+                            return Container(
+                              width: 180,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: color.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: color.withOpacity(0.45)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(Icons.circle, color: color, size: 12),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text(
+                                          label,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    e.value,
+                                    style: TextStyle(
+                                      color: color,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Top Tasks', style: Theme.of(context).textTheme.titleMedium),
+                      const SizedBox(height: 8),
+                      if (topTasks.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: Text('No task activity for the selected date.'),
+                        )
+                      else
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: DataTable(
+                            columns: const [
+                              DataColumn(label: Text('project_id')),
+                              DataColumn(label: Text('task_id')),
+                              DataColumn(label: Text('scans')),
+                            ],
+                            rows: topTasks.map((r) {
+                              return DataRow(
+                                cells: [
+                                  DataCell(Text(r['project_id'].toString())),
+                                  DataCell(Text(r['task_id'].toString())),
+                                  DataCell(Text(r['scans'].toString())),
+                                ],
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 
+////
   @override
   Widget build(BuildContext context) {
     final workDate = context.watch<AppState>().selectedDateStr;
@@ -347,9 +720,7 @@ class _LiveWorkforceTabState extends State<_LiveWorkforceTab> {
         _projects = rows;
         _selectedProjectId = selected;
       });
-    } catch (_) {
-      // ignore project dropdown failure; board can still load without it
-    }
+    } catch (_) {}
   }
 
   Future<void> _loadBoard() async {
@@ -896,6 +1267,54 @@ class _LiveWorkforceTabState extends State<_LiveWorkforceTab> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class SeAlertsBanner extends StatelessWidget {
+  final ApiClient api;
+  final String workDate;
+
+  const SeAlertsBanner({super.key, required this.api, required this.workDate});
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder(
+      future: api.getJson('/monitor/se-alerts', query: {'work_date': workDate}),
+      builder: (context, snap) {
+        if (!snap.hasData) return const SizedBox();
+
+        final json = snap.data;
+        if (json is! Map || json['data'] == null) return const SizedBox();
+
+        final alerts = json['data']['alerts'] ?? [];
+        if (alerts is! List || alerts.isEmpty) return const SizedBox();
+
+        return Card(
+          color: Colors.orange.withOpacity(0.15),
+          margin: const EdgeInsets.only(bottom: 12),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: alerts.map<Widget>((a) {
+                final m = a is Map ? (a['message']?.toString() ?? '') : '';
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.warning_amber, color: Colors.orange),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(m)),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        );
+      },
     );
   }
 }
