@@ -89,103 +89,6 @@ class _WorkforceStructurePageState extends State<WorkforceStructurePage> {
     }
   }
 
-  List<Map<String, dynamic>> _flattenTree(List<Map<String, dynamic>> nodes) {
-    final flat = <Map<String, dynamic>>[];
-
-    void walk(Map<String, dynamic> node) {
-      flat.add(node);
-      final children = (node['children'] as List? ?? []);
-      for (final child in children) {
-        walk(Map<String, dynamic>.from(child as Map));
-      }
-    }
-
-    for (final node in nodes) {
-      walk(node);
-    }
-
-    return flat;
-  }
-
-  Map<String, dynamic>? _findNodeById(String employeeId) {
-    for (final node in _flattenTree(_tree)) {
-      if ((node['employee_id'] ?? '').toString() == employeeId) {
-        return node;
-      }
-    }
-    return null;
-  }
-
-  Future<void> _performReassignWithUndo({
-    required String employeeId,
-    required String newManagerId,
-    required String updatedBy,
-  }) async {
-    final employeeNode = _findNodeById(employeeId);
-    final newManagerNode = _findNodeById(newManagerId);
-
-    final oldManagerId =
-        employeeNode?['reports_to_employee_id']?.toString() ?? '';
-    final oldManagerName =
-        employeeNode?['reports_to_employee_name']?.toString() ?? oldManagerId;
-    final employeeName =
-        employeeNode?['employee_name']?.toString() ?? employeeId;
-    final newManagerName =
-        newManagerNode?['employee_name']?.toString() ?? newManagerId;
-
-    await _service.reassign(
-      projectId: _projectController.text.trim(),
-      employeeId: employeeId,
-      newManagerId: newManagerId,
-      updatedBy: updatedBy,
-    );
-
-    if (!mounted) return;
-
-    await _load();
-
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$employeeName moved: $oldManagerName → $newManagerName'),
-        action: oldManagerId.isEmpty
-            ? null
-            : SnackBarAction(
-                label: 'UNDO',
-                onPressed: () async {
-                  try {
-                    await _service.reassign(
-                      projectId: _projectController.text.trim(),
-                      employeeId: employeeId,
-                      newManagerId: oldManagerId,
-                      updatedBy: updatedBy,
-                    );
-
-                    if (!mounted) return;
-                    await _load();
-
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Undo completed for $employeeName',
-                        ),
-                      ),
-                    );
-                  } catch (e) {
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Undo failed: $e')),
-                    );
-                  }
-                },
-              ),
-      ),
-    );
-  }
-
   Future<void> _openReassignDialog(Map<String, dynamic> node) async {
     final employeeId = node['employee_id'];
     final role = (node['role_code'] ?? '').toString().toUpperCase();
@@ -210,7 +113,7 @@ class _WorkforceStructurePageState extends State<WorkforceStructurePage> {
       return;
     }
 
-    final options = _validParentOptions(
+    List<Map<String, dynamic>> options = _validParentOptions(
       allNodes: allNodes,
       sourceNode: node,
     );
@@ -228,7 +131,7 @@ class _WorkforceStructurePageState extends State<WorkforceStructurePage> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: Text('Reassign ${employeeId ?? ''}'),
+          title: Text('Reassign $employeeId'),
           content: StatefulBuilder(
             builder: (context, setState) {
               return DropdownButtonFormField<String>(
@@ -269,11 +172,20 @@ class _WorkforceStructurePageState extends State<WorkforceStructurePage> {
     if (result == null) return;
 
     try {
-      await _performReassignWithUndo(
+      await _service.reassign(
+        projectId: projectId,
         employeeId: employeeId.toString(),
         newManagerId: result,
         updatedBy: 'E4001',
       );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Reassigned successfully')),
+      );
+
+      await _load();
     } catch (e) {
       if (!mounted) return;
 
@@ -291,6 +203,7 @@ class _WorkforceStructurePageState extends State<WorkforceStructurePage> {
     final targetId = targetNode['employee_id']?.toString() ?? '';
     final sourceName = sourceNode['employee_name']?.toString() ?? sourceId;
     final targetName = targetNode['employee_name']?.toString() ?? targetId;
+    final projectId = _projectController.text.trim();
 
     if (sourceId.isEmpty || targetId.isEmpty) return;
 
@@ -317,11 +230,20 @@ class _WorkforceStructurePageState extends State<WorkforceStructurePage> {
     if (confirm != true) return;
 
     try {
-      await _performReassignWithUndo(
+      await _service.reassign(
+        projectId: projectId,
         employeeId: sourceId,
         newManagerId: targetId,
         updatedBy: 'E4001',
       );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Reassigned via drag & drop')),
+      );
+
+      await _load();
     } catch (e) {
       if (!mounted) return;
 
@@ -585,8 +507,7 @@ class _TreeNodeWidget extends StatelessWidget {
     required this.isValidDrop,
   });
 
-   ////// start2 
-    @override
+  @override
   Widget build(BuildContext context) {
     final children = (node['children'] as List? ?? [])
         .map((e) => Map<String, dynamic>.from(e as Map))
@@ -602,43 +523,18 @@ class _TreeNodeWidget extends StatelessWidget {
       if (reportsTo.isNotEmpty) 'Reports to: $reportsTo',
     ];
 
-    Widget draggableName() {
-      return LongPressDraggable<Map<String, dynamic>>(
-        data: node,
-        feedback: Material(
-          color: Colors.transparent,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.blueGrey.shade700,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              employeeName.isEmpty ? employeeId : employeeName,
-              style: const TextStyle(color: Colors.white),
-            ),
-          ),
-        ),
-        childWhenDragging: Opacity(
-          opacity: 0.35,
-          child: Text(
-            employeeName.isEmpty ? employeeId : employeeName,
-            style: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-        ),
-        child: Text(
-          employeeName.isEmpty ? employeeId : employeeName,
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
-      );
-    }
-
-    Widget titleRow() {
-      return Row(
+    final tileContent = ListTile(
+      leading: _roleIcon(role),
+      title: Row(
         children: [
           _RoleBadge(role),
           const SizedBox(width: 10),
-          Expanded(child: draggableName()),
+          Expanded(
+            child: Text(
+              employeeName.isEmpty ? employeeId : employeeName,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
           if (role.toUpperCase() != 'PM')
             IconButton(
               icon: const Icon(Icons.swap_horiz),
@@ -646,13 +542,38 @@ class _TreeNodeWidget extends StatelessWidget {
               onPressed: () => onReassign(node),
             ),
         ],
-      );
-    }
+      ),
+      subtitle: Text(subtitleParts.join(' • ')),
+    );
 
-    return DragTarget<Map<String, dynamic>>(
+    final draggableTile = LongPressDraggable<Map<String, dynamic>>(
+      data: node,
+      feedback: Material(
+        color: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.blueGrey.shade700,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            employeeName.isEmpty ? employeeId : employeeName,
+            style: const TextStyle(color: Colors.white),
+          ),
+        ),
+      ),
+      childWhenDragging: Opacity(
+        opacity: 0.35,
+        child: tileContent,
+      ),
+      child: tileContent,
+    );
+
+    Widget wrappedTile = DragTarget<Map<String, dynamic>>(
       onWillAcceptWithDetails: (details) {
+        final incoming = details.data;
         return isValidDrop(
-          sourceNode: details.data,
+          sourceNode: incoming,
           targetNode: node,
         );
       },
@@ -660,31 +581,41 @@ class _TreeNodeWidget extends StatelessWidget {
         await onDragReassign(details.data, node);
       },
       builder: (context, candidateData, rejectedData) {
-        final highlighted = candidateData.isNotEmpty;
+        return Container(
+          decoration: candidateData.isNotEmpty
+              ? BoxDecoration(
+                  border: Border.all(color: Colors.green, width: 2),
+                  borderRadius: BorderRadius.circular(8),
+                )
+              : null,
+          child: draggableTile,
+        );
+      },
+    );
 
-        if (children.isEmpty) {
-          return Card(
-            margin: const EdgeInsets.symmetric(vertical: 4),
-            child: Container(
-              decoration: highlighted
-                  ? BoxDecoration(
-                      border: Border.all(color: Colors.green, width: 2),
-                      borderRadius: BorderRadius.circular(8),
-                    )
-                  : null,
-              child: ListTile(
-                leading: _roleIcon(role),
-                title: titleRow(),
-                subtitle: Text(subtitleParts.join(' • ')),
-              ),
-            ),
+    if (children.isEmpty) {
+      return Card(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        child: wrappedTile,
+      );
+    }
+    /////// start
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      child: DragTarget<Map<String, dynamic>>(
+        onWillAcceptWithDetails: (details) {
+          final incoming = details.data;
+          return isValidDrop(
+            sourceNode: incoming,
+            targetNode: node,
           );
-        }
-
-        return Card(
-          margin: const EdgeInsets.symmetric(vertical: 4),
-          child: Container(
-            decoration: highlighted
+        },
+        onAcceptWithDetails: (details) async {
+          await onDragReassign(details.data, node);
+        },
+        builder: (context, candidateData, rejectedData) {
+          return Container(
+            decoration: candidateData.isNotEmpty
                 ? BoxDecoration(
                     border: Border.all(color: Colors.green, width: 2),
                     borderRadius: BorderRadius.circular(8),
@@ -692,7 +623,51 @@ class _TreeNodeWidget extends StatelessWidget {
                 : null,
             child: ExpansionTile(
               leading: _roleIcon(role),
-              title: titleRow(),
+              title: Row(
+                children: [
+                  _RoleBadge(role),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: LongPressDraggable<Map<String, dynamic>>(
+                      data: node,
+                      feedback: Material(
+                        color: Colors.transparent,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.blueGrey.shade700,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            employeeName.isEmpty ? employeeId : employeeName,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      ),
+                      childWhenDragging: Opacity(
+                        opacity: 0.35,
+                        child: Text(
+                          employeeName.isEmpty ? employeeId : employeeName,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      child: Text(
+                        employeeName.isEmpty ? employeeId : employeeName,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                  if (role.toUpperCase() != 'PM')
+                    IconButton(
+                      icon: const Icon(Icons.swap_horiz),
+                      tooltip: 'Reassign',
+                      onPressed: () => onReassign(node),
+                    ),
+                ],
+              ),
               subtitle: Text(subtitleParts.join(' • ')),
               children: children
                   .map(
@@ -708,12 +683,13 @@ class _TreeNodeWidget extends StatelessWidget {
                   )
                   .toList(),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
+    //// end 
   }
-  /// end 2
+
   Widget _roleIcon(String role) {
     switch (role.toUpperCase()) {
       case 'PM':
