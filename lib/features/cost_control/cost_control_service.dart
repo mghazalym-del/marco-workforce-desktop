@@ -13,19 +13,16 @@ class CostControlService {
     String? projectId,
     String? taskId,
   }) async {
-    final uri = Uri.parse(
-      '$_baseUrl/cost-control/option1-details'
-      '?from=$from&to=$to'
-      '${_q('employee_id', employeeId)}'
-      '${_q('project_id', projectId)}'
-      '${_q('task_id', taskId)}',
+    final uri = _buildUri(
+      '/cost-control/option1-details',
+      from: from,
+      to: to,
+      employeeId: employeeId,
+      projectId: projectId,
+      taskId: taskId,
     );
 
-    final response = await http.get(
-      uri,
-      headers: _headers,
-    );
-
+    final response = await http.get(uri, headers: _headers);
     return _parseListResponse(response, 'Option 1 details');
   }
 
@@ -36,19 +33,16 @@ class CostControlService {
     String? projectId,
     String? taskId,
   }) async {
-    final uri = Uri.parse(
-      '$_baseUrl/cost-control/option2-details'
-      '?from=$from&to=$to'
-      '${_q('employee_id', employeeId)}'
-      '${_q('project_id', projectId)}'
-      '${_q('task_id', taskId)}',
+    final uri = _buildUri(
+      '/cost-control/option2-details',
+      from: from,
+      to: to,
+      employeeId: employeeId,
+      projectId: projectId,
+      taskId: taskId,
     );
 
-    final response = await http.get(
-      uri,
-      headers: _headers,
-    );
-
+    final response = await http.get(uri, headers: _headers);
     return _parseListResponse(response, 'Option 2 details');
   }
 
@@ -59,19 +53,16 @@ class CostControlService {
     String? projectId,
     String? taskId,
   }) async {
-    final uri = Uri.parse(
-      '$_baseUrl/cost-control/option1-task-summary'
-      '?from=$from&to=$to'
-      '${_q('employee_id', employeeId)}'
-      '${_q('project_id', projectId)}'
-      '${_q('task_id', taskId)}',
+    final uri = _buildUri(
+      '/cost-control/option1-task-summary',
+      from: from,
+      to: to,
+      employeeId: employeeId,
+      projectId: projectId,
+      taskId: taskId,
     );
 
-    final response = await http.get(
-      uri,
-      headers: _headers,
-    );
-
+    final response = await http.get(uri, headers: _headers);
     return _parseListResponse(response, 'Option 1 task summary');
   }
 
@@ -82,31 +73,50 @@ class CostControlService {
     String? projectId,
     String? taskId,
   }) async {
-    final uri = Uri.parse(
-      '$_baseUrl/cost-control/option2-task-summary'
-      '?from=$from&to=$to'
-      '${_q('employee_id', employeeId)}'
-      '${_q('project_id', projectId)}'
-      '${_q('task_id', taskId)}',
+    final uri = _buildUri(
+      '/cost-control/option2-task-summary',
+      from: from,
+      to: to,
+      employeeId: employeeId,
+      projectId: projectId,
+      taskId: taskId,
     );
 
-    final response = await http.get(
-      uri,
-      headers: _headers,
-    );
-
+    final response = await http.get(uri, headers: _headers);
     return _parseListResponse(response, 'Option 2 task summary');
+  }
+
+  Uri _buildUri(
+    String path, {
+    required String from,
+    required String to,
+    String? employeeId,
+    String? projectId,
+    String? taskId,
+  }) {
+    final qp = <String, String>{
+      'from': from,
+      'to': to,
+    };
+
+    if (employeeId != null && employeeId.trim().isNotEmpty) {
+      qp['employee_id'] = employeeId.trim();
+    }
+    if (projectId != null && projectId.trim().isNotEmpty) {
+      qp['project_id'] = projectId.trim();
+    }
+    if (taskId != null && taskId.trim().isNotEmpty) {
+      qp['task_id'] = taskId.trim();
+    }
+
+    return Uri.parse('$_baseUrl$path').replace(queryParameters: qp);
   }
 
   Map<String, String> get _headers => {
         'Authorization': 'Bearer $_token',
         'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': '1',
       };
-
-  String _q(String key, String? value) {
-    if (value == null || value.trim().isEmpty) return '';
-    return '&$key=${Uri.encodeQueryComponent(value.trim())}';
-  }
 
   List<Map<String, dynamic>> _parseListResponse(
     http.Response response,
@@ -116,15 +126,27 @@ class CostControlService {
       throw Exception('Failed to load $label: ${response.body}');
     }
 
-    final jsonData = jsonDecode(response.body) as Map<String, dynamic>;
-    final success = jsonData['success'] == true;
-    if (!success) {
-      throw Exception('$label API returned failure.');
+    final decoded = jsonDecode(response.body);
+
+    if (decoded is Map<String, dynamic>) {
+      if (decoded['success'] == false) {
+        throw Exception('$label API returned failure: ${decoded['error'] ?? decoded}');
+      }
+
+      final data = decoded['data'];
+      if (data is List) {
+        return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+
+      if (data is Map<String, dynamic> && data['rows'] is List) {
+        return (data['rows'] as List)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+      }
     }
 
-    final data = jsonData['data'];
-    if (data is List) {
-      return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    if (decoded is List) {
+      return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
     }
 
     return [];

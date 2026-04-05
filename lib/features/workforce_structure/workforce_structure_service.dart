@@ -15,10 +15,7 @@ class WorkforceStructureService {
 
     final response = await http.get(
       uri,
-      headers: {
-        'Authorization': 'Bearer $_token',
-        'Content-Type': 'application/json',
-      },
+      headers: _headers,
     );
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -26,62 +23,73 @@ class WorkforceStructureService {
     }
 
     final jsonData = jsonDecode(response.body) as Map<String, dynamic>;
-    if (jsonData['success'] != true) {
-      throw Exception('Workforce structure API returned failure.');
+    if (jsonData['success'] == false) {
+      throw Exception(
+        'Workforce structure API returned failure: ${jsonData['error'] ?? jsonData}',
+      );
     }
 
-    return Map<String, dynamic>.from(jsonData['data'] as Map);
-  }
-Future<void> reassign({
-  required String projectId,
-  required String employeeId,
-  required String newManagerId,
-  required String updatedBy,
-}) async {
-  final uri = Uri.parse('$_baseUrl/workforce-structure/reassign');
+    final data = jsonData['data'];
+    if (data is Map<String, dynamic>) {
+      return Map<String, dynamic>.from(data);
+    }
 
-  final response = await http.post(
-    uri,
-    headers: {
-      'Authorization': 'Bearer $_token',
-      'Content-Type': 'application/json',
-    },
-    body: jsonEncode({
-      'project_id': projectId,
-      'employee_id': employeeId,
-      'new_reports_to_employee_id': newManagerId,
-      'updated_by': updatedBy,
-    }),
-  );
-
-  if (response.statusCode < 200 || response.statusCode >= 300) {
-    throw Exception('Reassign failed: ${response.body}');
+    return <String, dynamic>{};
   }
 
-  final jsonData = jsonDecode(response.body);
-  if (jsonData['success'] != true) {
-    throw Exception('Reassign API failed');
+  Future<void> reassign({
+    required String projectId,
+    required String employeeId,
+    required String newManagerId,
+    required String updatedBy,
+  }) async {
+    final uri = Uri.parse('$_baseUrl/workforce-structure/reassign');
+
+    final response = await http.post(
+      uri,
+      headers: _headers,
+      body: jsonEncode({
+        'project_id': projectId,
+        'employee_id': employeeId,
+        'new_reports_to_employee_id': newManagerId,
+        'updated_by': updatedBy,
+      }),
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('Reassign failed: ${response.body}');
+    }
+
+    final jsonData = jsonDecode(response.body);
+    if (jsonData is Map<String, dynamic> && jsonData['success'] == false) {
+      throw Exception('Reassign API failed: ${jsonData['error'] ?? jsonData}');
+    }
   }
-}
 
-Future<List<Map<String, dynamic>>> fetchProjectFlat({
-  required String projectId,
-}) async {
-  final res = await fetchProjectTree(projectId: projectId);
+  Future<List<Map<String, dynamic>>> fetchProjectFlat({
+    required String projectId,
+  }) async {
+    final res = await fetchProjectTree(projectId: projectId);
 
-  final List<Map<String, dynamic>> flat = [];
+    final List<Map<String, dynamic>> flat = [];
 
-  void walk(List nodes) {
-    for (final n in nodes) {
-      final node = Map<String, dynamic>.from(n);
-      flat.add(node);
-      if (node['children'] != null) {
-        walk(node['children']);
+    void walk(List nodes) {
+      for (final n in nodes) {
+        final node = Map<String, dynamic>.from(n);
+        flat.add(node);
+        if (node['children'] != null) {
+          walk(node['children'] as List);
+        }
       }
     }
+
+    walk((res['tree'] as List?) ?? []);
+    return flat;
   }
 
-  walk(res['tree'] ?? []);
-  return flat;
-}
+  Map<String, String> get _headers => {
+        'Authorization': 'Bearer $_token',
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': '1',
+      };
 }

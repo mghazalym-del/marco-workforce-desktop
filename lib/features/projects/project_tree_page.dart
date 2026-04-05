@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 import '../../api/api_client.dart';
 import 'project_tree_widget.dart';
@@ -85,6 +87,7 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
   }
 
   void _popup(String title, String message) {
+    if (!mounted) return;
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -182,7 +185,8 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
         },
       );
 
-      final releaseId = (data is Map ? data["release_id"] : null)?.toString() ?? "-";
+      final releaseId =
+          (data is Map ? data["release_id"] : null)?.toString() ?? "-";
 
       _popup(
         "Task Released",
@@ -222,7 +226,9 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
     }
 
     if (resp is Map && resp["data"] is List) {
-      return (resp["data"] as List).map((e) => (e as Map).cast<String, dynamic>()).toList();
+      return (resp["data"] as List)
+          .map((e) => (e as Map).cast<String, dynamic>())
+          .toList();
     }
 
     return [];
@@ -268,11 +274,22 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
                 ),
               ),
               pw.SizedBox(height: 24),
-              pw.Text("Project   : ${widget.projectCode}", style: const pw.TextStyle(fontSize: 14)),
-              pw.Text("Task      : ${task.code}", style: const pw.TextStyle(fontSize: 14)),
-              pw.Text("Task Name : ${task.name}", style: const pw.TextStyle(fontSize: 14)),
               pw.Text(
-                seName.isEmpty ? "Site Engineer: $seId" : "Site Engineer: $seId - $seName",
+                "Project   : ${widget.projectCode}",
+                style: const pw.TextStyle(fontSize: 14),
+              ),
+              pw.Text(
+                "Task      : ${task.code}",
+                style: const pw.TextStyle(fontSize: 14),
+              ),
+              pw.Text(
+                "Task Name : ${task.name}",
+                style: const pw.TextStyle(fontSize: 14),
+              ),
+              pw.Text(
+                seName.isEmpty
+                    ? "Site Engineer: $seId"
+                    : "Site Engineer: $seId - $seName",
                 style: const pw.TextStyle(fontSize: 14),
               ),
               pw.Text(
@@ -281,8 +298,14 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
                     : "Supervisor: $supervisorId - $supervisorName",
                 style: const pw.TextStyle(fontSize: 14),
               ),
-              pw.Text("Min Workers: $minWorkers", style: const pw.TextStyle(fontSize: 14)),
-              pw.Text("Max Workers: $maxWorkers", style: const pw.TextStyle(fontSize: 14)),
+              pw.Text(
+                "Min Workers: $minWorkers",
+                style: const pw.TextStyle(fontSize: 14),
+              ),
+              pw.Text(
+                "Max Workers: $maxWorkers",
+                style: const pw.TextStyle(fontSize: 14),
+              ),
               pw.SizedBox(height: 24),
               pw.BarcodeWidget(
                 barcode: pw.Barcode.qrCode(),
@@ -291,25 +314,42 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
                 height: 220,
               ),
               pw.SizedBox(height: 20),
-              pw.Text("Release ID: $releaseId", style: const pw.TextStyle(fontSize: 12)),
+              pw.Text(
+                "Release ID: $releaseId",
+                style: const pw.TextStyle(fontSize: 12),
+              ),
             ],
           ),
         ),
       ),
     );
 
-    final dir = await getApplicationSupportDirectory();
+    final bytes = await doc.save();
     final safeTask = task.code.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), "_");
-    final safeRelease = releaseId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), "_");
-    final filePath =
-        "${dir.path}/QR_${widget.projectCode}_${safeTask}_${safeRelease}_${DateTime.now().millisecondsSinceEpoch}.pdf";
+    final safeRelease =
+        releaseId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), "_");
+    final filename =
+        "QR_${widget.projectCode}_${safeTask}_${safeRelease}_${DateTime.now().millisecondsSinceEpoch}.pdf";
 
+    if (kIsWeb) {
+      await Printing.sharePdf(bytes: bytes, filename: filename);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("QR PDF prepared: $filename")),
+      );
+      return;
+    }
+
+    final dir = await getApplicationSupportDirectory();
+    final filePath = "${dir.path}/$filename";
     final file = File(filePath);
-    await file.writeAsBytes(await doc.save());
+    await file.writeAsBytes(bytes);
 
     final result = await Process.run("open", [file.path]);
     if (result.exitCode != 0) {
-      throw Exception("PDF created but could not open automatically: ${result.stderr}");
+      throw Exception(
+        "PDF created but could not open automatically: ${result.stderr}",
+      );
     }
 
     if (!mounted) return;
@@ -338,14 +378,19 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
                     separatorBuilder: (_, __) => const Divider(),
                     itemBuilder: (_, i) {
                       final r = releases[i];
-                      final supervisorId = r["supervisor_employee_id"]?.toString() ?? "-";
-                      final supervisorName = r["supervisor_name"]?.toString() ?? "";
+                      final supervisorId =
+                          r["supervisor_employee_id"]?.toString() ?? "-";
+                      final supervisorName =
+                          r["supervisor_name"]?.toString() ?? "";
                       final seId = r["se_employee_id"]?.toString() ?? "-";
                       final seName = r["se_name"]?.toString() ?? "";
-                      final releaseStatus = r["release_status"]?.toString() ?? "-";
+                      final releaseStatus =
+                          r["release_status"]?.toString() ?? "-";
                       final releasedAt = _fmtDateTime(r["released_at"]);
-                      final minWorkers = r["min_workers"]?.toString() ?? "0";
-                      final maxWorkers = r["max_workers"]?.toString() ?? "-";
+                      final minWorkers =
+                          r["min_workers"]?.toString() ?? "0";
+                      final maxWorkers =
+                          r["max_workers"]?.toString() ?? "-";
 
                       return ListTile(
                         title: Text(
@@ -369,7 +414,10 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
                               onPressed: releaseStatus.toUpperCase() == "ACTIVE"
                                   ? () async {
                                       Navigator.pop(context);
-                                      await _openQrPdfForRelease(task: n, release: r);
+                                      await _openQrPdfForRelease(
+                                        task: n,
+                                        release: r,
+                                      );
                                     }
                                   : null,
                             ),
@@ -378,7 +426,8 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
                               label: const Text("Close"),
                               onPressed: releaseStatus.toUpperCase() == "ACTIVE"
                                   ? () async {
-                                      final releaseId = r["release_id"]?.toString() ?? "";
+                                      final releaseId =
+                                          r["release_id"]?.toString() ?? "";
                                       if (releaseId.isEmpty) return;
 
                                       try {
@@ -397,7 +446,10 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
                                         );
                                       } catch (e) {
                                         if (!mounted) return;
-                                        _popup("Close Release Failed", e.toString());
+                                        _popup(
+                                          "Close Release Failed",
+                                          e.toString(),
+                                        );
                                       }
                                     }
                                   : null,
@@ -511,13 +563,15 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
     });
 
     try {
-      final resp = await widget.api.getJson("/projects/${widget.projectCode}/tree");
+      final resp =
+          await widget.api.getJson("/projects/${widget.projectCode}/tree");
 
       Map<String, dynamic> data;
       if (resp is Map && resp['items'] is List) {
@@ -559,6 +613,7 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
         );
       }).where((n) => n.id.isNotEmpty).toList();
 
+      if (!mounted) return;
       setState(() {
         _items = items;
         _applyFilter();
@@ -567,8 +622,10 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
         }
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _error = e.toString());
     } finally {
+      if (!mounted) return;
       setState(() => _loading = false);
     }
   }
@@ -592,7 +649,10 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
             icon: const Icon(Icons.dashboard_outlined),
             tooltip: "Live Workforce Board",
           ),
-          IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
+          IconButton(
+            onPressed: _load,
+            icon: const Icon(Icons.refresh),
+          ),
         ],
       ),
       body: Padding(
@@ -615,7 +675,9 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
                 OutlinedButton(
                   onPressed: expandable.isEmpty
                       ? null
-                      : () => setState(() => _expanded = Set<String>.from(expandable)),
+                      : () => setState(
+                            () => _expanded = Set<String>.from(expandable),
+                          ),
                   child: const Text("Expand all"),
                 ),
                 const SizedBox(width: 8),
@@ -630,7 +692,12 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : (_error != null)
-                      ? Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))
+                      ? Center(
+                          child: Text(
+                            _error!,
+                            style: const TextStyle(color: Colors.red),
+                          ),
+                        )
                       : ProjectTreeWidget(
                           items: _filtered,
                           expandedIds: _expanded,
@@ -654,12 +721,13 @@ class _LiveCapacityBoardDialog extends StatefulWidget {
   const _LiveCapacityBoardDialog({
     required this.api,
     required this.projectCode,
-    required this.taskNameFor,
     required this.todayStr,
+    required this.taskNameFor,
   });
 
   @override
-  State<_LiveCapacityBoardDialog> createState() => _LiveCapacityBoardDialogState();
+  State<_LiveCapacityBoardDialog> createState() =>
+      _LiveCapacityBoardDialogState();
 }
 
 class _LiveCapacityBoardDialogState extends State<_LiveCapacityBoardDialog> {
@@ -724,7 +792,9 @@ class _LiveCapacityBoardDialogState extends State<_LiveCapacityBoardDialog> {
       if (resp is List) {
         rows = resp.map((e) => (e as Map).cast<String, dynamic>()).toList();
       } else if (resp is Map && resp["data"] is List) {
-        rows = (resp["data"] as List).map((e) => (e as Map).cast<String, dynamic>()).toList();
+        rows = (resp["data"] as List)
+            .map((e) => (e as Map).cast<String, dynamic>())
+            .toList();
       }
 
       if (!mounted) return;
@@ -892,7 +962,8 @@ class _LiveCapacityBoardDialogState extends State<_LiveCapacityBoardDialog> {
               final min = int.tryParse("${r["min_workers"] ?? 0}") ?? 0;
               final maxRaw = r["max_workers"];
               final max = maxRaw == null ? null : int.tryParse("$maxRaw");
-              final denom = (max ?? (current > 0 ? current : min > 0 ? min : 1)).clamp(1, 999999);
+              final denom =
+                  (max ?? (current > 0 ? current : min > 0 ? min : 1)).clamp(1, 999999);
               final progress = (current / denom).clamp(0.0, 1.0);
               final status = r["capacity_status"]?.toString() ?? "NORMAL";
               final color = _capacityColor(status);
@@ -1000,7 +1071,9 @@ class _LiveCapacityBoardDialogState extends State<_LiveCapacityBoardDialog> {
                       width: 220,
                       child: _summaryCard(
                         title: "Full / Over",
-                        value: (_countStatus("FULL") + _countStatus("OVER_CAPACITY")).toString(),
+                        value: (_countStatus("FULL") +
+                                _countStatus("OVER_CAPACITY"))
+                            .toString(),
                         color: Colors.red,
                         icon: Icons.report_problem_outlined,
                       ),
@@ -1066,24 +1139,44 @@ class _LiveCapacityBoardDialogState extends State<_LiveCapacityBoardDialog> {
                                 rows: _rows.map((r) {
                                   final taskId = r["task_id"]?.toString() ?? "-";
                                   final taskName = widget.taskNameFor(taskId);
-                                  final seId = r["se_employee_id"]?.toString() ?? "-";
+                                  final seId =
+                                      r["se_employee_id"]?.toString() ?? "-";
                                   final seName = r["se_name"]?.toString() ?? "";
-                                  final supId = r["supervisor_employee_id"]?.toString() ?? "-";
-                                  final supName = r["supervisor_name"]?.toString() ?? "";
-                                  final current = int.tryParse("${r["current_workers"] ?? 0}") ?? 0;
-                                  final min = int.tryParse("${r["min_workers"] ?? 0}") ?? 0;
+                                  final supId =
+                                      r["supervisor_employee_id"]?.toString() ??
+                                          "-";
+                                  final supName =
+                                      r["supervisor_name"]?.toString() ?? "";
+                                  final current = int.tryParse(
+                                          "${r["current_workers"] ?? 0}") ??
+                                      0;
+                                  final min = int.tryParse(
+                                          "${r["min_workers"] ?? 0}") ??
+                                      0;
                                   final maxRaw = r["max_workers"];
-                                  final max = maxRaw == null ? null : int.tryParse("$maxRaw");
-                                  final available = r["available_slots"]?.toString() ?? "-";
-                                  final status = r["capacity_status"]?.toString() ?? "NORMAL";
-                                  final releasedAtRaw = r["released_at"]?.toString() ?? "-";
+                                  final max =
+                                      maxRaw == null ? null : int.tryParse("$maxRaw");
+                                  final available =
+                                      r["available_slots"]?.toString() ?? "-";
+                                  final status =
+                                      r["capacity_status"]?.toString() ?? "NORMAL";
+                                  final releasedAtRaw =
+                                      r["released_at"]?.toString() ?? "-";
                                   final releasedAt = releasedAtRaw.length > 16
-                                      ? releasedAtRaw.substring(0, 16).replaceFirst("T", " ")
+                                      ? releasedAtRaw
+                                          .substring(0, 16)
+                                          .replaceFirst("T", " ")
                                       : releasedAtRaw;
 
-                                  final denom =
-                                      (max ?? (current > 0 ? current : min > 0 ? min : 1)).clamp(1, 999999);
-                                  final progress = (current / denom).clamp(0.0, 1.0);
+                                  final denom = (max ??
+                                          (current > 0
+                                              ? current
+                                              : min > 0
+                                                  ? min
+                                                  : 1))
+                                      .clamp(1, 999999);
+                                  final progress =
+                                      (current / denom).clamp(0.0, 1.0);
                                   final color = _capacityColor(status);
 
                                   return DataRow(
@@ -1105,7 +1198,9 @@ class _LiveCapacityBoardDialogState extends State<_LiveCapacityBoardDialog> {
                                         SizedBox(
                                           width: 210,
                                           child: Text(
-                                            seName.isEmpty ? seId : "$seId - $seName",
+                                            seName.isEmpty
+                                                ? seId
+                                                : "$seId - $seName",
                                             overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
@@ -1114,18 +1209,23 @@ class _LiveCapacityBoardDialogState extends State<_LiveCapacityBoardDialog> {
                                         SizedBox(
                                           width: 230,
                                           child: Text(
-                                            supName.isEmpty ? supId : "$supId - $supName",
+                                            supName.isEmpty
+                                                ? supId
+                                                : "$supId - $supName",
                                             overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
                                       ),
-                                      DataCell(Text("$current")),
-                                      DataCell(Text("$min")),
+                                      DataCell(Text(current.toString())),
+                                      DataCell(Text(min.toString())),
                                       DataCell(Text(max?.toString() ?? "-")),
                                       DataCell(Text(available)),
                                       DataCell(
                                         Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
                                           decoration: BoxDecoration(
                                             color: color.withOpacity(0.15),
                                             borderRadius: BorderRadius.circular(8),
@@ -1144,18 +1244,25 @@ class _LiveCapacityBoardDialogState extends State<_LiveCapacityBoardDialog> {
                                         SizedBox(
                                           width: 160,
                                           child: Column(
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
                                             children: [
                                               Text("$current / ${max?.toString() ?? "-"}"),
                                               const SizedBox(height: 6),
                                               ClipRRect(
-                                                borderRadius: BorderRadius.circular(8),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
                                                 child: LinearProgressIndicator(
                                                   minHeight: 10,
                                                   value: progress,
-                                                  backgroundColor: Colors.grey.withOpacity(0.18),
-                                                  valueColor: AlwaysStoppedAnimation<Color>(color),
+                                                  backgroundColor:
+                                                      Colors.grey.withOpacity(0.18),
+                                                  valueColor:
+                                                      AlwaysStoppedAnimation<Color>(
+                                                    color,
+                                                  ),
                                                 ),
                                               ),
                                             ],

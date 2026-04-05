@@ -32,11 +32,19 @@ class ApiClient {
 
   Map<String, String> _headers({bool json = true}) {
     final headers = <String, String>{};
-    if (json) headers['Content-Type'] = 'application/json';
+
+    if (json) {
+      headers['Content-Type'] = 'application/json';
+    }
+
     final t = token;
     if (t != null && t.isNotEmpty) {
       headers['Authorization'] = 'Bearer $t';
     }
+
+    // 🔥 IMPORTANT: Fix ngrok for Flutter Web
+    headers['ngrok-skip-browser-warning'] = '1';
+
     return headers;
   }
 
