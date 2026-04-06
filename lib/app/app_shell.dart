@@ -14,6 +14,7 @@ import '../features/cost_control/cost_control_option1_page.dart';
 import '../features/cost_control/cost_control_option2_page.dart';
 import '../features/workforce_structure/workforce_structure_page.dart';
 import '../features/task_control/pm_task_control_page.dart';
+import '../features/task_control/se_task_control_page.dart';
 
 class AppShell extends StatefulWidget {
   final ApiClient api;
@@ -79,6 +80,13 @@ class _AppShellState extends State<AppShell> {
           label: 'PM Tasks',
           icon: Icons.assignment_outlined,
           page: PmTaskControlPage(api: widget.api),
+        ),
+
+      if (role == 'SE')
+        _NavItem(
+          label: 'SE Tasks',
+          icon: Icons.engineering,
+          page: SeTaskControlPage(api: widget.api),
         ),
 
       _NavItem(
