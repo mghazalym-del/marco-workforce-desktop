@@ -48,13 +48,41 @@ class ApiClient {
     return headers;
   }
 
+  void _logRequest(
+    String method,
+    Uri uri, {
+    Map<String, dynamic>? payload,
+    Map<String, String>? query,
+  }) {
+    print("========================================");
+    print("API REQUEST => $method $uri");
+    print("BASE URL    => $baseUrl");
+    print("TOKEN       => ${token == null || token!.isEmpty ? "(none)" : token}");
+    if (query != null && query.isNotEmpty) {
+      print("QUERY       => $query");
+    }
+    if (payload != null) {
+      print("BODY        => ${jsonEncode(payload)}");
+    }
+  }
+
+  void _logResponse(http.Response res) {
+    final body = res.body;
+    final preview = body.length > 1200 ? "${body.substring(0, 1200)}...(truncated)" : body;
+    print("API RESPONSE <= ${res.statusCode}");
+    print("BODY         <= $preview");
+    print("========================================");
+  }
+
   // =====================
   // GET → returns data only
   // =====================
   Future<dynamic> getJson(String path, {Map<String, String>? query}) async {
     final uri = _buildUri(path, query: query);
-    print("GET => $uri");
+    _logRequest("GET", uri, query: query);
     final res = await http.get(uri, headers: _headers());
+    _logResponse(res);
+
     final decoded = _handleResponse(res);
 
     if (decoded is Map && decoded.containsKey('data')) {
@@ -89,11 +117,16 @@ class ApiClient {
   }) async {
     final payload = body ?? data ?? <String, dynamic>{};
     final uri = _buildUri(path);
+
+    _logRequest("POST", uri, payload: payload);
+
     final res = await http.post(
       uri,
       headers: _headers(),
       body: jsonEncode(payload),
     );
+
+    _logResponse(res);
     return _unwrap(_handleResponse(res));
   }
 
@@ -107,11 +140,16 @@ class ApiClient {
   }) async {
     final payload = body ?? data ?? <String, dynamic>{};
     final uri = _buildUri(path);
+
+    _logRequest("PATCH", uri, payload: payload);
+
     final res = await http.patch(
       uri,
       headers: _headers(),
       body: jsonEncode(payload),
     );
+
+    _logResponse(res);
     return _unwrap(_handleResponse(res));
   }
 

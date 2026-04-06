@@ -7,8 +7,10 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:provider/provider.dart';
 
 import '../../api/api_client.dart';
+import '../../app/app_state.dart';
 import 'project_tree_widget.dart';
 
 class ProjectTreePage extends StatefulWidget {
@@ -36,6 +38,21 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
 
   Set<String> _expanded = {};
   String _q = "";
+
+  bool _busyAction = false;
+
+  String get _currentRole {
+    final app = context.read<AppState>();
+    return app.role.toUpperCase().trim();
+  }
+
+  String get _currentEmployeeId {
+    final app = context.read<AppState>();
+    return app.profile?.employeeId ?? "";
+  }
+
+  bool get _isPm => _currentRole == "PM";
+  bool get _isSe => _currentRole == "SE";
 
   DateTime? _dt(dynamic v) {
     if (v == null) return null;
@@ -86,6 +103,48 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
     }
   }
 
+  String _friendlyApiError(Object e) {
+    final raw = e.toString();
+
+    if (raw.contains('"code":"PARENT_NOT_ACTIVE"')) {
+      return "Cannot activate this task because its parent/main task is still inactive.\n\n"
+          "Please activate the main task first, then try again.";
+    }
+
+    if (raw.contains('"code":"PM_ONLY"')) {
+      return "Only the Project Manager can perform this action.";
+    }
+
+    if (raw.contains('"code":"INVALID_STATUS"')) {
+      return "This action is not allowed for the current task status.";
+    }
+
+    if (raw.contains('"code":"TASK_ASSIGNED"')) {
+      return "This task is already assigned.\n\n"
+          "Unassign it first before deactivating it.";
+    }
+
+    if (raw.contains('"code":"ASSIGNEE_NOT_SE"')) {
+      return "The selected employee is not recognized by the backend as a Site Engineer (SE).\n\n"
+          "Please verify the employee ID and role in the database, then try again.";
+    }
+
+    if (raw.contains('"code":"ASSIGNEE_NOT_FOUND"')) {
+      return "The selected employee was not found.";
+    }
+
+    if (raw.contains('"code":"NOT_LEAF"')) {
+      return "Only leaf tasks can be assigned.";
+    }
+
+    if (raw.contains('"code":"ACTIVE_RELEASE_EXISTS"')) {
+      return "An ACTIVE release already exists for this task and supervisor.\n\n"
+          "Close the existing release first, then create a new one.";
+    }
+
+    return raw;
+  }
+
   void _popup(String title, String message) {
     if (!mounted) return;
     showDialog(
@@ -101,6 +160,18 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
         ],
       ),
     );
+  }
+
+  Future<void> _runAction(Future<void> Function() action) async {
+    if (_busyAction) return;
+    setState(() => _busyAction = true);
+    try {
+      await action();
+    } finally {
+      if (mounted) {
+        setState(() => _busyAction = false);
+      }
+    }
   }
 
   Future<void> _releaseToSupervisor(WorkItemNode n) async {
@@ -173,43 +244,38 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
 
     if (supervisorId.isEmpty) return;
 
-    try {
-      final data = await widget.api.postJson(
-        "/task-releases",
-        body: {
-          "project_id": widget.projectCode,
-          "task_id": n.code,
-          "supervisor_employee_id": supervisorId,
-          "min_workers": minWorkers.isEmpty ? 0 : int.tryParse(minWorkers) ?? 0,
-          "max_workers": maxWorkers.isEmpty ? null : int.tryParse(maxWorkers),
-        },
-      );
-
-      final releaseId =
-          (data is Map ? data["release_id"] : null)?.toString() ?? "-";
-
-      _popup(
-        "Task Released",
-        "Project: ${widget.projectCode}\n"
-        "Task: ${n.code}\n"
-        "Name: ${n.name}\n"
-        "Supervisor: $supervisorId\n"
-        "Min Workers: ${minWorkers.isEmpty ? "0" : minWorkers}\n"
-        "Max Workers: ${maxWorkers.isEmpty ? "-" : maxWorkers}\n"
-        "Release ID: $releaseId",
-      );
-    } catch (e) {
-      final msg = e.toString();
-      if (msg.contains("ACTIVE_RELEASE_EXISTS")) {
-        _popup(
-          "Active Release Exists",
-          "An ACTIVE release already exists for this supervisor on this task.\n\n"
-          "Close the current release first, then create a new one.",
+    await _runAction(() async {
+      try {
+        final data = await widget.api.postJson(
+          "/task-releases",
+          body: {
+            "project_id": widget.projectCode,
+            "task_id": n.code,
+            "supervisor_employee_id": supervisorId,
+            "min_workers": minWorkers.isEmpty ? 0 : int.tryParse(minWorkers) ?? 0,
+            "max_workers": maxWorkers.isEmpty ? null : int.tryParse(maxWorkers),
+          },
         );
-      } else {
-        _popup("Release Failed", msg);
+
+        final releaseId =
+            (data is Map ? data["release_id"] : null)?.toString() ?? "-";
+
+        _popup(
+          "Task Released",
+          "Project: ${widget.projectCode}\n"
+          "Task: ${n.code}\n"
+          "Name: ${n.name}\n"
+          "Supervisor: $supervisorId\n"
+          "Min Workers: ${minWorkers.isEmpty ? "0" : minWorkers}\n"
+          "Max Workers: ${maxWorkers.isEmpty ? "-" : maxWorkers}\n"
+          "Release ID: $releaseId",
+        );
+
+        await _load();
+      } catch (e) {
+        _popup("Release Failed", _friendlyApiError(e));
       }
-    }
+    });
   }
 
   Future<List<Map<String, dynamic>>> _loadReleasesForTask(WorkItemNode n) async {
@@ -430,27 +496,30 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
                                           r["release_id"]?.toString() ?? "";
                                       if (releaseId.isEmpty) return;
 
-                                      try {
-                                        await widget.api.patchJson(
-                                          "/task-releases/$releaseId/close",
-                                          body: {},
-                                        );
-                                        if (!mounted) return;
-                                        Navigator.pop(context);
-                                        _popup(
-                                          "Release Closed",
-                                          "Task: ${widget.projectCode} / ${n.code}\n"
-                                          "Task Name: ${n.name}\n"
-                                          "Supervisor: $supervisorId\n"
-                                          "Release ID: $releaseId",
-                                        );
-                                      } catch (e) {
-                                        if (!mounted) return;
-                                        _popup(
-                                          "Close Release Failed",
-                                          e.toString(),
-                                        );
-                                      }
+                                      await _runAction(() async {
+                                        try {
+                                          await widget.api.patchJson(
+                                            "/task-releases/$releaseId/close",
+                                            body: {},
+                                          );
+                                          if (!mounted) return;
+                                          Navigator.pop(context);
+                                          _popup(
+                                            "Release Closed",
+                                            "Task: ${widget.projectCode} / ${n.code}\n"
+                                            "Task Name: ${n.name}\n"
+                                            "Supervisor: $supervisorId\n"
+                                            "Release ID: $releaseId",
+                                          );
+                                          await _load();
+                                        } catch (e) {
+                                          if (!mounted) return;
+                                          _popup(
+                                            "Close Release Failed",
+                                            _friendlyApiError(e),
+                                          );
+                                        }
+                                      });
                                     }
                                   : null,
                             ),
@@ -469,7 +538,7 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
         ),
       );
     } catch (e) {
-      _popup("View Releases Failed", e.toString());
+      _popup("View Releases Failed", _friendlyApiError(e));
     }
   }
 
@@ -488,45 +557,213 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
     );
   }
 
+  Future<void> _showAssignToSeDialog(WorkItemNode n) async {
+    final ctrl = TextEditingController(
+      text: n.assignedToEmployeeId ?? "",
+    );
+
+    final seId = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(
+          n.isAssigned ? "Reassign to Site Engineer" : "Assign to Site Engineer",
+        ),
+        content: TextField(
+          controller: ctrl,
+          decoration: const InputDecoration(
+            labelText: "SE Employee ID",
+            hintText: "E9002",
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, ctrl.text.trim()),
+            child: Text(n.isAssigned ? "Reassign" : "Assign"),
+          ),
+        ],
+      ),
+    );
+
+    if (seId == null || seId.isEmpty) return;
+
+    await _runAction(() async {
+      try {
+        if (n.isAssigned) {
+          await widget.api.postJson(
+            "/work-items/${n.id}/unassign",
+            body: {},
+          );
+        }
+
+        await widget.api.postJson(
+          "/work-items/${n.id}/assign",
+          body: {
+            "se_employee_id": seId,
+          },
+        );
+
+        _popup(
+          "Success",
+          n.isAssigned ? "Reassigned to $seId" : "Assigned to $seId",
+        );
+        await _load();
+      } catch (e) {
+        _popup("Assign Failed", _friendlyApiError(e));
+      }
+    });
+  }
+
   void _showTaskActions(WorkItemNode n) {
+    final isActive = n.isActive;
+    final isAssigned = n.isAssigned;
+    final isActivatable = n.isInactive;
+    final isReleasableByThisSe =
+        _isSe && isAssigned && (n.assignedToEmployeeId == _currentEmployeeId);
+
+    final actions = <Widget>[
+      ListTile(
+        leading: const Icon(Icons.info_outline),
+        title: const Text("Task Details"),
+        subtitle: Text("${n.code} • ${n.name}"),
+        onTap: () {
+          Navigator.pop(context);
+          _popup(
+            "Task Details",
+            "Code: ${n.code}\n"
+            "Name: ${n.name}\n"
+            "Task status: ${n.taskStatus}\n"
+            "Plan status: ${n.planStatus}\n"
+            "Assigned SE: ${n.assignedToEmployeeId ?? "-"}\n"
+            "Assigned By: ${n.assignedBy ?? "-"}\n"
+            "Assigned At: ${_fmtDateTime(n.assignedAt)}\n"
+            "Activated By: ${n.activatedBy ?? "-"}\n"
+            "Activated At: ${_fmtDateTime(n.activatedAt)}",
+          );
+        },
+      ),
+    ];
+
+    if (_isPm) {
+      actions.addAll([
+        ListTile(
+          leading: const Icon(Icons.play_circle_fill),
+          title: const Text("Activate Task"),
+          enabled: isActivatable && !_busyAction,
+          onTap: isActivatable && !_busyAction
+              ? () async {
+                  Navigator.pop(context);
+                  await _runAction(() async {
+                    try {
+                      await widget.api.postJson(
+                        "/work-items/${n.id}/activate",
+                        body: {},
+                      );
+
+                      _popup("Success", "Task Activated");
+                      await _load();
+                    } catch (e) {
+                      _popup("Activation Failed", _friendlyApiError(e));
+                    }
+                  });
+                }
+              : null,
+        ),
+        ListTile(
+          leading: const Icon(Icons.stop_circle),
+          title: const Text("Deactivate Task"),
+          enabled: isActive && !_busyAction,
+          onTap: isActive && !_busyAction
+              ? () async {
+                  Navigator.pop(context);
+                  await _runAction(() async {
+                    try {
+                      await widget.api.postJson(
+                        "/work-items/${n.id}/deactivate",
+                        body: {},
+                      );
+
+                      _popup("Success", "Task Deactivated");
+                      await _load();
+                    } catch (e) {
+                      _popup("Deactivate Failed", _friendlyApiError(e));
+                    }
+                  });
+                }
+              : null,
+        ),
+        ListTile(
+          leading: const Icon(Icons.person_add),
+          title: Text(isAssigned ? "Reassign to SE" : "Assign to SE"),
+          enabled: (isActive || isAssigned) && !_busyAction,
+          onTap: (isActive || isAssigned) && !_busyAction
+              ? () async {
+                  Navigator.pop(context);
+                  await _showAssignToSeDialog(n);
+                }
+              : null,
+        ),
+        if (isAssigned)
+          ListTile(
+            leading: const Icon(Icons.person_remove),
+            title: const Text("Unassign SE"),
+            enabled: !_busyAction,
+            onTap: !_busyAction
+                ? () async {
+                    Navigator.pop(context);
+                    await _runAction(() async {
+                      try {
+                        await widget.api.postJson(
+                          "/work-items/${n.id}/unassign",
+                          body: {},
+                        );
+
+                        _popup("Success", "Task unassigned");
+                        await _load();
+                      } catch (e) {
+                        _popup("Unassign Failed", _friendlyApiError(e));
+                      }
+                    });
+                  }
+                : null,
+          ),
+      ]);
+    }
+
+    if (isReleasableByThisSe) {
+      actions.add(
+        ListTile(
+          leading: const Icon(Icons.qr_code_2),
+          title: const Text("Release to Supervisor"),
+          enabled: !_busyAction,
+          onTap: !_busyAction
+              ? () async {
+                  Navigator.pop(context);
+                  await _releaseToSupervisor(n);
+                }
+              : null,
+        ),
+      );
+    }
+
+    actions.add(
+      ListTile(
+        leading: const Icon(Icons.list_alt),
+        title: const Text("View Releases"),
+        onTap: () {
+          Navigator.pop(context);
+          _showReleasesDialog(n);
+        },
+      ),
+    );
+
     showModalBottomSheet(
       context: context,
       builder: (_) => SafeArea(
-        child: Wrap(
-          children: [
-            ListTile(
-              leading: const Icon(Icons.info_outline),
-              title: const Text("Task Details"),
-              subtitle: Text("${n.code} • ${n.name}"),
-              onTap: () {
-                Navigator.pop(context);
-                _popup(
-                  "Task Details",
-                  "Code: ${n.code}\n"
-                  "Name: ${n.name}\n"
-                  "Task status: ${n.taskStatus}\n"
-                  "Plan status: ${n.planStatus}",
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.qr_code_2),
-              title: const Text("Release to Supervisor"),
-              onTap: () {
-                Navigator.pop(context);
-                _releaseToSupervisor(n);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.list_alt),
-              title: const Text("View Releases / Open QR PDF"),
-              onTap: () {
-                Navigator.pop(context);
-                _showReleasesDialog(n);
-              },
-            ),
-          ],
-        ),
+        child: Wrap(children: actions),
       ),
     );
   }
@@ -541,7 +778,8 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
       return n.code.toLowerCase().contains(q) ||
           n.name.toLowerCase().contains(q) ||
           n.taskStatus.toLowerCase().contains(q) ||
-          n.planStatus.toLowerCase().contains(q);
+          n.planStatus.toLowerCase().contains(q) ||
+          (n.assignedToEmployeeId ?? "").toLowerCase().contains(q);
     }).toList();
   }
 
@@ -610,6 +848,11 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
           plannedDurationDays: dur,
           planStatus: planStatus,
           taskStatus: taskStatus,
+          assignedToEmployeeId: _parentId(m["assigned_to_employee_id"]),
+          assignedBy: _parentId(m["assigned_by"]),
+          assignedAt: _dt(m["assigned_at"]),
+          activatedBy: _parentId(m["activated_by"]),
+          activatedAt: _dt(m["activated_at"]),
         );
       }).where((n) => n.id.isNotEmpty).toList();
 
@@ -661,7 +904,7 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
           children: [
             TextField(
               decoration: const InputDecoration(
-                labelText: "Search (code / name / status)",
+                labelText: "Search (code / name / status / assigned SE)",
                 prefixIcon: Icon(Icons.search),
               ),
               onChanged: (v) => setState(() {

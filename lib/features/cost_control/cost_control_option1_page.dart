@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'cost_control_service.dart';
 
@@ -132,7 +133,7 @@ class _CostControlOption1PageState extends State<CostControlOption1Page> {
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
+    final content = DefaultTabController(
       length: 2,
       child: Scaffold(
         appBar: AppBar(
@@ -176,7 +177,15 @@ class _CostControlOption1PageState extends State<CostControlOption1Page> {
           ),
         ),
       ),
-    );
+   );
+
+if (!kIsWeb) return content;
+
+return Container(
+  color: const Color(0xFFF4F6FA),
+  padding: const EdgeInsets.all(12),
+  child: content,
+);
   }
 
   Widget _buildFilters() {

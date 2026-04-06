@@ -48,6 +48,7 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   Future<void> _load(String workDate) async {
+    if (!mounted) return;
     setState(() {
       loading = true;
       error = null;
@@ -69,13 +70,16 @@ class _DashboardPageState extends State<DashboardPage>
         d = <String, dynamic>{};
       }
 
+      if (!mounted) return;
       setState(() {
         data = d.isEmpty ? null : d;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => error = e.toString());
     } finally {
-      if (mounted) setState(() => loading = false);
+      if (!mounted) return;
+      setState(() => loading = false);
     }
   }
 
@@ -86,41 +90,138 @@ class _DashboardPageState extends State<DashboardPage>
     return int.tryParse(v.toString()) ?? 0;
   }
 
-  Widget _kpi(String title, int value) {
-    return SizedBox(
-      width: 190,
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-              const SizedBox(height: 8),
-              Text(
-                value.toString(),
-                style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-              ),
-            ],
+  List<Map<String, dynamic>> _mapList(dynamic v) {
+    if (v is! List) return const [];
+    return v
+        .whereType<dynamic>()
+        .map((e) => e is Map
+            ? Map<String, dynamic>.from(e as Map)
+            : <String, dynamic>{})
+        .where((m) => m.isNotEmpty)
+        .toList();
+  }
+
+  Widget _kpiCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color color,
+    String? subtitle,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
+        ],
+        border: Border.all(color: Colors.grey.withOpacity(0.14)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade700,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    height: 1.0,
+                  ),
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _panel({
+    required BuildContext context,
+    required String title,
+    required Widget child,
+    Widget? trailing,
+  }) {
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.grey.withOpacity(0.15)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                ),
+                if (trailing != null) trailing,
+              ],
+            ),
+            const SizedBox(height: 12),
+            child,
+          ],
         ),
       ),
     );
   }
 
-  List<Map<String, dynamic>> _mapList(dynamic v) {
-    if (v is! List) return const [];
-    return v
-        .whereType<dynamic>()
-        .map((e) => e is Map ? Map<String, dynamic>.from(e as Map) : <String, dynamic>{})
-        .where((m) => m.isNotEmpty)
-        .toList();
-  }
-
   Widget _buildOverviewTab(BuildContext context) {
-    if (loading) return const Center(child: CircularProgressIndicator());
-    if (error != null) return Center(child: Text('Error: $error'));
-    if (data == null) return const Center(child: Text('No data for the selected date.'));
+    if (loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (error != null) {
+      return Center(child: Text('Error: $error'));
+    }
+    if (data == null) {
+      return const Center(child: Text('No data for the selected date.'));
+    }
 
     final dayCounts = (data!['day_counts'] is Map)
         ? Map<String, dynamic>.from(data!['day_counts'] as Map)
@@ -162,50 +263,6 @@ class _DashboardPageState extends State<DashboardPage>
       }
     }
 
-    Widget execCard({
-      required String title,
-      required String value,
-      required Color color,
-      required IconData icon,
-    }) {
-      return SizedBox(
-        width: 220,
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.10),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: color.withOpacity(0.22)),
-          ),
-          child: Row(
-            children: [
-              CircleAvatar(
-                backgroundColor: color.withOpacity(0.18),
-                child: Icon(icon, color: color),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: const TextStyle(fontSize: 12)),
-                    const SizedBox(height: 4),
-                    Text(
-                      value,
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
     return RefreshIndicator(
       onRefresh: () async => _load(context.read<AppState>().selectedDateStr),
       child: FutureBuilder(
@@ -234,8 +291,9 @@ class _DashboardPageState extends State<DashboardPage>
           }
 
           final alertCount = alerts.length;
-          final openSessionAlerts =
-              alerts.where((a) => a['type']?.toString() == 'OPEN_SESSION').length;
+          final openSessionAlerts = alerts
+              .where((a) => a['type']?.toString() == 'OPEN_SESSION')
+              .length;
           final capacityAlerts = alerts.where((a) {
             final t = a['type']?.toString() ?? '';
             return t == 'UNDER_MIN' || t == 'FULL' || t == 'OVER_CAPACITY';
@@ -245,8 +303,10 @@ class _DashboardPageState extends State<DashboardPage>
             return t == 'NO_SCAN' || t == 'SUPERVISOR_NOT_CLOSED';
           }).length;
 
-          final systemHealthColor = alertCount > 0 ? Colors.orange : Colors.green;
-          final systemHealthText = alertCount > 0 ? 'ATTENTION REQUIRED' : 'NORMAL';
+          final systemHealthColor =
+              alertCount > 0 ? Colors.orange : Colors.green;
+          final systemHealthText =
+              alertCount > 0 ? 'ATTENTION REQUIRED' : 'NORMAL';
 
           final riskMap = <String, String>{};
           for (final a in alerts) {
@@ -262,7 +322,8 @@ class _DashboardPageState extends State<DashboardPage>
                 final currentColor = heatColorForAlerts(current);
                 final newColor = heatColorForAlerts(type);
                 if ((newColor == Colors.red && currentColor != Colors.red) ||
-                    (newColor == Colors.orange && currentColor == Colors.green)) {
+                    (newColor == Colors.orange &&
+                        currentColor == Colors.green)) {
                   riskMap[key] = type;
                 }
               }
@@ -291,75 +352,85 @@ class _DashboardPageState extends State<DashboardPage>
             padding: const EdgeInsets.all(16),
             children: [
               if (alertCount > 0) ...[
-                Card(
-                  color: Colors.orange.withOpacity(0.12),
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.notifications_active, color: Colors.orange),
-                            const SizedBox(width: 8),
-                            Text(
-                              'SE Alerts ($alertCount)',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        ...alerts.take(5).map((a) {
-                          final message = a['message']?.toString() ?? '';
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Icon(Icons.warning_amber_rounded,
-                                    color: Colors.orange, size: 18),
-                                const SizedBox(width: 8),
-                                Expanded(child: Text(message)),
-                              ],
-                            ),
-                          );
-                        }),
-                        if (alerts.length > 5)
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.orange.withOpacity(0.25)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.notifications_active,
+                            color: Colors.orange,
+                          ),
+                          const SizedBox(width: 8),
                           Text(
-                            '... and ${alerts.length - 5} more alert(s)',
-                            style: TextStyle(
-                              color: Colors.grey.shade700,
-                              fontStyle: FontStyle.italic,
+                            'SE Alerts ($alertCount)',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
-                      ],
-                    ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      ...alerts.take(5).map((a) {
+                        final message = a['message']?.toString() ?? '';
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(
+                                Icons.warning_amber_rounded,
+                                color: Colors.orange,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(child: Text(message)),
+                            ],
+                          ),
+                        );
+                      }),
+                      if (alerts.length > 5)
+                        Text(
+                          '... and ${alerts.length - 5} more alert(s)',
+                          style: TextStyle(
+                            color: Colors.grey.shade700,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 14),
               ],
-              Card(
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: systemHealthColor.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: systemHealthColor.withOpacity(0.4)),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: systemHealthColor.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: systemHealthColor.withOpacity(0.28),
                   ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        alertCount > 0
-                            ? Icons.warning_amber_rounded
-                            : Icons.check_circle,
-                        color: systemHealthColor,
-                        size: 30,
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      alertCount > 0
+                          ? Icons.warning_amber_rounded
+                          : Icons.check_circle,
+                      color: systemHealthColor,
+                      size: 30,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
                         'SYSTEM HEALTH: $systemHealthText',
                         style: TextStyle(
                           fontSize: 18,
@@ -367,210 +438,250 @@ class _DashboardPageState extends State<DashboardPage>
                           color: systemHealthColor,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 16),
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
+              GridView(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate:
+                    const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 280,
+                  mainAxisExtent: 96,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                ),
                 children: [
-                  _kpi('Open Days', openDays),
-                  _kpi('Closed Days', closedDays),
-                  _kpi('Total Scans', totalScans),
-                  _kpi('Accepted Scans', acceptedScans),
-                  _kpi('Rejected Scans', rejectedScans),
-                  _kpi('Offline Scans', offlineScans),
+                  _kpiCard(
+                    title: 'Open Days',
+                    value: openDays.toString(),
+                    icon: Icons.lock_open,
+                    color: Colors.indigo,
+                  ),
+                  _kpiCard(
+                    title: 'Closed Days',
+                    value: closedDays.toString(),
+                    icon: Icons.task_alt,
+                    color: Colors.green,
+                  ),
+                  _kpiCard(
+                    title: 'Total Scans',
+                    value: totalScans.toString(),
+                    icon: Icons.qr_code_scanner,
+                    color: Colors.blue,
+                  ),
+                  _kpiCard(
+                    title: 'Accepted Scans',
+                    value: acceptedScans.toString(),
+                    icon: Icons.check_circle_outline,
+                    color: Colors.teal,
+                  ),
+                  _kpiCard(
+                    title: 'Rejected Scans',
+                    value: rejectedScans.toString(),
+                    icon: Icons.cancel_outlined,
+                    color: Colors.red,
+                  ),
+                  _kpiCard(
+                    title: 'Offline Scans',
+                    value: offlineScans.toString(),
+                    icon: Icons.wifi_off,
+                    color: Colors.deepPurple,
+                  ),
                 ],
               ),
               const SizedBox(height: 14),
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
+              GridView(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate:
+                    const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 280,
+                  mainAxisExtent: 96,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                ),
                 children: [
-                  execCard(
+                  _kpiCard(
                     title: 'Alert Count',
                     value: alertCount.toString(),
-                    color: alertCount > 0 ? Colors.orange : Colors.green,
                     icon: Icons.notification_important_outlined,
+                    color: alertCount > 0 ? Colors.orange : Colors.green,
                   ),
-                  execCard(
+                  _kpiCard(
                     title: 'Live Workers',
                     value: acceptedScans.toString(),
-                    color: Colors.teal,
                     icon: Icons.groups_2_outlined,
+                    color: Colors.teal,
                   ),
-                  execCard(
+                  _kpiCard(
                     title: 'Open Sessions',
                     value: openSessionAlerts.toString(),
-                    color: openSessionAlerts > 0 ? Colors.red : Colors.green,
                     icon: Icons.play_circle_outline,
+                    color: openSessionAlerts > 0 ? Colors.red : Colors.green,
                   ),
-                  execCard(
+                  _kpiCard(
                     title: 'Tasks At Risk',
                     value: capacityAlerts.toString(),
-                    color: capacityAlerts > 0 ? Colors.deepOrange : Colors.green,
                     icon: Icons.track_changes_outlined,
+                    color:
+                        capacityAlerts > 0 ? Colors.deepOrange : Colors.green,
                   ),
-                  execCard(
+                  _kpiCard(
                     title: 'Compliance Issues',
                     value: complianceAlerts.toString(),
-                    color: complianceAlerts > 0 ? Colors.purple : Colors.green,
                     icon: Icons.rule_folder_outlined,
+                    color:
+                        complianceAlerts > 0 ? Colors.purple : Colors.green,
                   ),
                 ],
               ),
               const SizedBox(height: 16),
-              Card(
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: acceptedScans > 0
-                        ? Colors.green.withOpacity(0.08)
-                        : Colors.red.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: acceptedScans > 0
+                      ? Colors.green.withOpacity(0.08)
+                      : Colors.red.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: acceptedScans > 0 ? Colors.green : Colors.red,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      acceptedScans > 0
+                          ? Icons.play_circle_fill
+                          : Icons.pause_circle,
                       color: acceptedScans > 0 ? Colors.green : Colors.red,
+                      size: 28,
                     ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        acceptedScans > 0
-                            ? Icons.play_circle_fill
-                            : Icons.pause_circle,
-                        color: acceptedScans > 0 ? Colors.green : Colors.red,
-                        size: 28,
+                    const SizedBox(width: 12),
+                    Text(
+                      acceptedScans > 0
+                          ? 'WORKFORCE ACTIVE'
+                          : 'NO ACTIVITY DETECTED',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
                       ),
-                      const SizedBox(width: 12),
-                      Text(
-                        acceptedScans > 0
-                            ? 'WORKFORCE ACTIVE'
-                            : 'NO ACTIVITY DETECTED',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 16),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Live Workforce Heat Map',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      if (riskMap.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 8),
-                          child: Text('No active task risks for the selected date.'),
-                        )
-                      else ...[
-                        Wrap(
-                          spacing: 12,
-                          runSpacing: 8,
-                          children: [
-                            heatLegend(Colors.green, 'Normal'),
-                            heatLegend(Colors.orange, 'Watch'),
-                            heatLegend(Colors.red, 'Critical'),
-                          ],
+              _panel(
+                context: context,
+                title: 'Live Workforce Heat Map',
+                child: riskMap.isEmpty
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Text(
+                          'No active task risks for the selected date.',
                         ),
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: riskMap.entries.map((e) {
-                            final color = heatColorForAlerts(e.value);
-                            final label = e.key;
-                            return Container(
-                              width: 180,
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: color.withOpacity(0.12),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: color.withOpacity(0.45)),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Icon(Icons.circle, color: color, size: 12),
-                                      const SizedBox(width: 6),
-                                      Expanded(
-                                        child: Text(
-                                          label,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Wrap(
+                            spacing: 12,
+                            runSpacing: 8,
+                            children: [
+                              heatLegend(Colors.green, 'Normal'),
+                              heatLegend(Colors.orange, 'Watch'),
+                              heatLegend(Colors.red, 'Critical'),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 10,
+                            children: riskMap.entries.map((e) {
+                              final color = heatColorForAlerts(e.value);
+                              final label = e.key;
+                              return Container(
+                                width: 180,
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: color.withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: color.withOpacity(0.45),
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.circle,
+                                          color: color,
+                                          size: 12,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            label,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    e.value,
-                                    style: TextStyle(
-                                      color: color,
-                                      fontWeight: FontWeight.w600,
+                                      ],
                                     ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Top Tasks', style: Theme.of(context).textTheme.titleMedium),
-                      const SizedBox(height: 8),
-                      if (topTasks.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 12),
-                          child: Text('No task activity for the selected date.'),
-                        )
-                      else
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: DataTable(
-                            columns: const [
-                              DataColumn(label: Text('project_id')),
-                              DataColumn(label: Text('task_id')),
-                              DataColumn(label: Text('scans')),
-                            ],
-                            rows: topTasks.map((r) {
-                              return DataRow(
-                                cells: [
-                                  DataCell(Text(r['project_id'].toString())),
-                                  DataCell(Text(r['task_id'].toString())),
-                                  DataCell(Text(r['scans'].toString())),
-                                ],
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      e.value,
+                                      style: TextStyle(
+                                        color: color,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               );
                             }).toList(),
                           ),
+                        ],
+                      ),
+              ),
+              const SizedBox(height: 16),
+              _panel(
+                context: context,
+                title: 'Top Tasks',
+                child: topTasks.isEmpty
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Text(
+                          'No task activity for the selected date.',
                         ),
-                    ],
-                  ),
-                ),
+                      )
+                    : SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: DataTable(
+                          headingRowColor: WidgetStatePropertyAll(
+                            Colors.grey.withOpacity(0.08),
+                          ),
+                          columns: const [
+                            DataColumn(label: Text('project_id')),
+                            DataColumn(label: Text('task_id')),
+                            DataColumn(label: Text('scans')),
+                          ],
+                          rows: topTasks.map((r) {
+                            return DataRow(
+                              cells: [
+                                DataCell(Text(r['project_id'].toString())),
+                                DataCell(Text(r['task_id'].toString())),
+                                DataCell(Text(r['scans'].toString())),
+                              ],
+                            );
+                          }).toList(),
+                        ),
+                      ),
               ),
             ],
           );
@@ -579,20 +690,32 @@ class _DashboardPageState extends State<DashboardPage>
     );
   }
 
-////
   @override
   Widget build(BuildContext context) {
     final workDate = context.watch<AppState>().selectedDateStr;
 
     return Column(
       children: [
-        Material(
-          color: Colors.transparent,
+        Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.grey.withOpacity(0.14)),
+          ),
           child: Align(
             alignment: Alignment.centerLeft,
             child: TabBar(
               controller: _tabController,
               isScrollable: true,
+              indicator: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              labelColor: Theme.of(context).colorScheme.primary,
+              unselectedLabelColor: Colors.black54,
+              dividerColor: Colors.transparent,
               tabs: const [
                 Tab(text: 'Overview'),
                 Tab(text: 'Live Workforce'),
@@ -683,7 +806,6 @@ class _LiveWorkforceTabState extends State<_LiveWorkforceTab> {
   Future<void> _loadProjects() async {
     try {
       final resp = await widget.api.getJson('/projects');
-      debugPrint("PROJECTS RESP => $resp");
 
       List<Map<String, dynamic>> rows = [];
 
@@ -702,7 +824,8 @@ class _LiveWorkforceTabState extends State<_LiveWorkforceTab> {
           rows = (resp['items'] as List)
               .map((e) => (e as Map).cast<String, dynamic>())
               .toList();
-        } else if (resp['data'] is Map && (resp['data'] as Map)['items'] is List) {
+        } else if (resp['data'] is Map &&
+            (resp['data'] as Map)['items'] is List) {
           rows = (((resp['data'] as Map)['items']) as List)
               .map((e) => (e as Map).cast<String, dynamic>())
               .toList();
@@ -791,8 +914,9 @@ class _LiveWorkforceTabState extends State<_LiveWorkforceTab> {
     }
   }
 
-  int _countStatus(String status) =>
-      _rows.where((r) => (r['capacity_status']?.toString() ?? 'NORMAL') == status).length;
+  int _countStatus(String status) => _rows
+      .where((r) => (r['capacity_status']?.toString() ?? 'NORMAL') == status)
+      .length;
 
   int _totalCurrentWorkers() => _rows.fold<int>(
         0,
@@ -810,37 +934,56 @@ class _LiveWorkforceTabState extends State<_LiveWorkforceTab> {
     required Color color,
     required IconData icon,
   }) {
-    return SizedBox(
-      width: 220,
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.10),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withOpacity(0.25)),
-        ),
-        child: Row(
-          children: [
-            CircleAvatar(
-              backgroundColor: color.withOpacity(0.18),
-              child: Icon(icon, color: color),
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+        border: Border.all(color: Colors.grey.withOpacity(0.14)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(12),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: const TextStyle(fontSize: 12)),
-                  const SizedBox(height: 4),
-                  Text(
-                    value,
-                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+            child: Icon(icon, color: color),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade700,
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    height: 1,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -876,8 +1019,9 @@ class _LiveWorkforceTabState extends State<_LiveWorkforceTab> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
+        color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.withOpacity(0.25)),
+        border: Border.all(color: Colors.grey.withOpacity(0.18)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -918,8 +1062,9 @@ class _LiveWorkforceTabState extends State<_LiveWorkforceTab> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
+        color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.withOpacity(0.25)),
+        border: Border.all(color: Colors.grey.withOpacity(0.18)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -938,7 +1083,11 @@ class _LiveWorkforceTabState extends State<_LiveWorkforceTab> {
               final min = int.tryParse("${r['min_workers'] ?? 0}") ?? 0;
               final maxRaw = r['max_workers'];
               final max = maxRaw == null ? null : int.tryParse("$maxRaw");
-              final denom = (max ?? (current > 0 ? current : (min > 0 ? min : 1))).clamp(1, 999999);
+              final denom = (max ??
+                      (current > 0
+                          ? current
+                          : (min > 0 ? min : 1)))
+                  .clamp(1, 999999);
               final progress = (current / denom).clamp(0.0, 1.0);
               final status = r['capacity_status']?.toString() ?? 'NORMAL';
               final color = _capacityColor(status);
@@ -996,79 +1145,96 @@ class _LiveWorkforceTabState extends State<_LiveWorkforceTab> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Row(
-            children: [
-              SizedBox(
-                width: 320,
-                child: DropdownButtonFormField<String?>(
-                  value: _selectedProjectId,
-                  decoration: const InputDecoration(
-                    labelText: 'Project Filter',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: [
-                    const DropdownMenuItem<String?>(
-                      value: null,
-                      child: Text('All Projects'),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.grey.withOpacity(0.14)),
+            ),
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                SizedBox(
+                  width: 320,
+                  child: DropdownButtonFormField<String?>(
+                    value: _selectedProjectId,
+                    decoration: const InputDecoration(
+                      labelText: 'Project Filter',
+                      border: OutlineInputBorder(),
                     ),
-                    ..._projects.map(
-                      (p) => DropdownMenuItem<String?>(
-                        value: _projectIdOf(p),
-                        child: Text("${_projectIdOf(p)} - ${_projectNameOf(p)}"),
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('All Projects'),
                       ),
+                      ..._projects.map(
+                        (p) => DropdownMenuItem<String?>(
+                          value: _projectIdOf(p),
+                          child: Text(
+                            "${_projectIdOf(p)} - ${_projectNameOf(p)}",
+                          ),
+                        ),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      setState(() => _selectedProjectId = value);
+                      _loadBoard();
+                    },
+                  ),
+                ),
+                SizedBox(
+                  width: 170,
+                  child: DropdownButtonFormField<int>(
+                    value: _refreshSeconds,
+                    decoration: const InputDecoration(
+                      labelText: 'Refresh (sec)',
+                      border: OutlineInputBorder(),
+                      isDense: true,
                     ),
-                  ],
-                  onChanged: (value) {
-                    setState(() => _selectedProjectId = value);
+                    items: _refreshOptions
+                        .map(
+                          (s) => DropdownMenuItem<int>(
+                            value: s,
+                            child: Text('$s seconds'),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() => _refreshSeconds = value);
+                      _restartTimer();
+                    },
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    setState(() => _selectedProjectId = null);
                     _loadBoard();
                   },
+                  icon: const Icon(Icons.clear),
+                  label: const Text('Clear Filter'),
                 ),
-              ),
-              const SizedBox(width: 12),
-              SizedBox(
-                width: 170,
-                child: DropdownButtonFormField<int>(
-                  value: _refreshSeconds,
-                  decoration: const InputDecoration(
-                    labelText: 'Refresh (sec)',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: _refreshOptions
-                      .map(
-                        (s) => DropdownMenuItem<int>(
-                          value: s,
-                          child: Text('$s seconds'),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) {
-                    if (value == null) return;
-                    setState(() => _refreshSeconds = value);
-                    _restartTimer();
-                  },
+                Text(
+                  "Auto-refresh: ${_refreshSeconds}s",
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
-              ),
-              const SizedBox(width: 12),
-              OutlinedButton.icon(
-                onPressed: () {
-                  setState(() => _selectedProjectId = null);
-                  _loadBoard();
-                },
-                icon: const Icon(Icons.clear),
-                label: const Text('Clear Filter'),
-              ),
-              const Spacer(),
-              Text(
-                "Auto-refresh: ${_refreshSeconds}s",
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: 14),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
+          GridView(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate:
+                const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 280,
+              mainAxisExtent: 96,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+            ),
             children: [
               _summaryCard(
                 title: 'Active Releases',
@@ -1090,7 +1256,9 @@ class _LiveWorkforceTabState extends State<_LiveWorkforceTab> {
               ),
               _summaryCard(
                 title: 'Full / Over',
-                value: (_countStatus('FULL') + _countStatus('OVER_CAPACITY')).toString(),
+                value:
+                    (_countStatus('FULL') + _countStatus('OVER_CAPACITY'))
+                        .toString(),
                 color: Colors.red,
                 icon: Icons.report_problem_outlined,
               ),
@@ -1113,8 +1281,13 @@ class _LiveWorkforceTabState extends State<_LiveWorkforceTab> {
           ),
           const SizedBox(height: 14),
           Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: Colors.grey.withOpacity(0.14)),
+            ),
             child: Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1122,7 +1295,9 @@ class _LiveWorkforceTabState extends State<_LiveWorkforceTab> {
                     children: [
                       Text(
                         'Live Workforce Board',
-                        style: Theme.of(context).textTheme.titleMedium,
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
                       ),
                       const Spacer(),
                       IconButton(
@@ -1147,6 +1322,9 @@ class _LiveWorkforceTabState extends State<_LiveWorkforceTab> {
                           child: SingleChildScrollView(
                             controller: _verticalCtrl,
                             child: DataTable(
+                              headingRowColor: WidgetStatePropertyAll(
+                                Colors.grey.withOpacity(0.08),
+                              ),
                               columnSpacing: 18,
                               headingRowHeight: 46,
                               dataRowMinHeight: 58,
@@ -1165,29 +1343,55 @@ class _LiveWorkforceTabState extends State<_LiveWorkforceTab> {
                                 DataColumn(label: Text('Load')),
                               ],
                               rows: _rows.map((r) {
-                                final projectId = r['project_id']?.toString() ?? '-';
-                                final taskId = r['task_id']?.toString() ?? '-';
-                                final seId = r['se_employee_id']?.toString() ?? '-';
-                                final seName = r['se_name']?.toString() ?? '';
-                                final supId = r['supervisor_employee_id']?.toString() ?? '-';
-                                final supName = r['supervisor_name']?.toString() ?? '';
-                                final current = int.tryParse("${r['current_workers'] ?? 0}") ?? 0;
-                                final min = int.tryParse("${r['min_workers'] ?? 0}") ?? 0;
+                                final projectId =
+                                    r['project_id']?.toString() ?? '-';
+                                final taskId =
+                                    r['task_id']?.toString() ?? '-';
+                                final seId =
+                                    r['se_employee_id']?.toString() ?? '-';
+                                final seName =
+                                    r['se_name']?.toString() ?? '';
+                                final supId =
+                                    r['supervisor_employee_id']?.toString() ??
+                                        '-';
+                                final supName =
+                                    r['supervisor_name']?.toString() ?? '';
+                                final current = int.tryParse(
+                                        "${r['current_workers'] ?? 0}") ??
+                                    0;
+                                final min = int.tryParse(
+                                        "${r['min_workers'] ?? 0}") ??
+                                    0;
                                 final maxRaw = r['max_workers'];
-                                final max = maxRaw == null ? null : int.tryParse("$maxRaw");
-                                final available = r['available_slots']?.toString() ?? '-';
-                                final status = r['capacity_status']?.toString() ?? 'NORMAL';
-                                final releasedAtRaw = r['released_at']?.toString() ?? '-';
+                                final max = maxRaw == null
+                                    ? null
+                                    : int.tryParse("$maxRaw");
+                                final available =
+                                    r['available_slots']?.toString() ?? '-';
+                                final status =
+                                    r['capacity_status']?.toString() ??
+                                        'NORMAL';
+                                final releasedAtRaw =
+                                    r['released_at']?.toString() ?? '-';
                                 final releasedAt = releasedAtRaw.length > 16
-                                    ? releasedAtRaw.substring(0, 16).replaceFirst("T", " ")
+                                    ? releasedAtRaw
+                                        .substring(0, 16)
+                                        .replaceFirst("T", " ")
                                     : releasedAtRaw;
 
-                                final denom = (max ?? (current > 0 ? current : (min > 0 ? min : 1))).clamp(1, 999999);
-                                final progress = (current / denom).clamp(0.0, 1.0);
+                                final denom = (max ??
+                                        (current > 0
+                                            ? current
+                                            : (min > 0 ? min : 1)))
+                                    .clamp(1, 999999);
+                                final progress =
+                                    (current / denom).clamp(0.0, 1.0);
                                 final color = _capacityColor(status);
 
                                 return DataRow(
-                                  color: WidgetStatePropertyAll(_capacityRowColor(status)),
+                                  color: WidgetStatePropertyAll(
+                                    _capacityRowColor(status),
+                                  ),
                                   cells: [
                                     DataCell(Text(projectId)),
                                     DataCell(Text(taskId)),
@@ -1195,7 +1399,9 @@ class _LiveWorkforceTabState extends State<_LiveWorkforceTab> {
                                       SizedBox(
                                         width: 210,
                                         child: Text(
-                                          seName.isEmpty ? seId : '$seId - $seName',
+                                          seName.isEmpty
+                                              ? seId
+                                              : '$seId - $seName',
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
@@ -1204,7 +1410,9 @@ class _LiveWorkforceTabState extends State<_LiveWorkforceTab> {
                                       SizedBox(
                                         width: 230,
                                         child: Text(
-                                          supName.isEmpty ? supId : '$supId - $supName',
+                                          supName.isEmpty
+                                              ? supId
+                                              : '$supId - $supName',
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
@@ -1215,10 +1423,14 @@ class _LiveWorkforceTabState extends State<_LiveWorkforceTab> {
                                     DataCell(Text(available)),
                                     DataCell(
                                       Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
                                         decoration: BoxDecoration(
                                           color: color.withOpacity(0.15),
-                                          borderRadius: BorderRadius.circular(8),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
                                         ),
                                         child: Text(
                                           status,
@@ -1234,18 +1446,26 @@ class _LiveWorkforceTabState extends State<_LiveWorkforceTab> {
                                       SizedBox(
                                         width: 160,
                                         child: Column(
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
-                                            Text('$current / ${max?.toString() ?? "-"}'),
+                                            Text(
+                                              '$current / ${max?.toString() ?? "-"}',
+                                            ),
                                             const SizedBox(height: 6),
                                             ClipRRect(
-                                              borderRadius: BorderRadius.circular(8),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
                                               child: LinearProgressIndicator(
                                                 minHeight: 10,
                                                 value: progress,
-                                                backgroundColor: Colors.grey.withOpacity(0.18),
-                                                valueColor: AlwaysStoppedAnimation<Color>(color),
+                                                backgroundColor: Colors.grey
+                                                    .withOpacity(0.18),
+                                                valueColor:
+                                                    AlwaysStoppedAnimation<
+                                                        Color>(color),
                                               ),
                                             ),
                                           ],
@@ -1275,7 +1495,11 @@ class SeAlertsBanner extends StatelessWidget {
   final ApiClient api;
   final String workDate;
 
-  const SeAlertsBanner({super.key, required this.api, required this.workDate});
+  const SeAlertsBanner({
+    super.key,
+    required this.api,
+    required this.workDate,
+  });
 
   @override
   Widget build(BuildContext context) {

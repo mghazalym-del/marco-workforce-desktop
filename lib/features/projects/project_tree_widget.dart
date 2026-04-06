@@ -14,6 +14,12 @@ class WorkItemNode {
   final String planStatus;
   final String taskStatus;
 
+  final String? assignedToEmployeeId;
+  final String? assignedBy;
+  final DateTime? assignedAt;
+  final String? activatedBy;
+  final DateTime? activatedAt;
+
   WorkItemNode({
     required this.id,
     required this.parentId,
@@ -24,7 +30,16 @@ class WorkItemNode {
     required this.plannedDurationDays,
     required this.planStatus,
     required this.taskStatus,
+    this.assignedToEmployeeId,
+    this.assignedBy,
+    this.assignedAt,
+    this.activatedBy,
+    this.activatedAt,
   });
+
+  bool get isActive => taskStatus.toUpperCase() == "ACTIVE";
+  bool get isAssigned => taskStatus.toUpperCase() == "ASSIGNED";
+  bool get isInactive => taskStatus.toUpperCase() == "INACTIVE";
 }
 
 class ProjectTreeWidget extends StatelessWidget {
@@ -63,7 +78,25 @@ class ProjectTreeWidget extends StatelessWidget {
     final dur = (n.plannedDurationDays == null) ? "-" : "${n.plannedDurationDays}d";
     final plan = n.planStatus.isEmpty ? "-" : n.planStatus;
     final task = n.taskStatus.isEmpty ? "-" : n.taskStatus;
-    return "Task: $task   Plan: $plan   ${_fmtDate(n.plannedStart)} → ${_fmtDate(n.plannedEnd)}   Dur: $dur";
+
+    final assigned = (n.assignedToEmployeeId == null || n.assignedToEmployeeId!.trim().isEmpty)
+        ? ""
+        : "   Assigned SE: ${n.assignedToEmployeeId}";
+
+    return "Task: $task   Plan: $plan   ${_fmtDate(n.plannedStart)} → ${_fmtDate(n.plannedEnd)}   Dur: $dur$assigned";
+  }
+
+  IconData _leadingIcon(WorkItemNode n, bool hasKids) {
+    if (hasKids) return Icons.account_tree_outlined;
+    if (n.isAssigned) return Icons.assignment_turned_in_outlined;
+    if (n.isActive) return Icons.task_alt;
+    return Icons.radio_button_unchecked;
+  }
+
+  Color? _tileTint(BuildContext context, WorkItemNode n) {
+    if (n.isAssigned) return Colors.orange.withOpacity(0.06);
+    if (n.isActive) return Colors.green.withOpacity(0.05);
+    return null;
   }
 
   @override
@@ -94,41 +127,44 @@ class ProjectTreeWidget extends StatelessWidget {
 
     final leftPad = 12.0 + depth * 18.0;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        ListTile(
-          contentPadding: EdgeInsets.only(left: leftPad, right: 12),
-          leading: Icon(hasKids ? Icons.account_tree_outlined : Icons.task_alt, size: 18),
-          title: Text(
-            "${n.code}  ${n.name}",
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+    return Container(
+      color: _tileTint(context, n),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListTile(
+            contentPadding: EdgeInsets.only(left: leftPad, right: 12),
+            leading: Icon(_leadingIcon(n, hasKids), size: 18),
+            title: Text(
+              "${n.code}  ${n.name}",
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Text(
+              _subtitle(n),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: hasKids
+                ? IconButton(
+                    icon: Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
+                    onPressed: () {
+                      final next = Set<String>.from(expanded);
+                      if (isExpanded) {
+                        next.remove(n.id);
+                      } else {
+                        next.add(n.id);
+                      }
+                      onExpandedChanged(next);
+                    },
+                  )
+                : null,
+            onTap: onNodeTap == null ? null : () => onNodeTap!(n),
           ),
-          subtitle: Text(
-            _subtitle(n),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          trailing: hasKids
-              ? IconButton(
-                  icon: Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
-                  onPressed: () {
-                    final next = Set<String>.from(expanded);
-                    if (isExpanded) {
-                      next.remove(n.id);
-                    } else {
-                      next.add(n.id);
-                    }
-                    onExpandedChanged(next);
-                  },
-                )
-              : null,
-          onTap: onNodeTap == null ? null : () => onNodeTap!(n),
-        ),
-        if (hasKids && isExpanded)
-          ...kids.map((k) => _buildNode(context, k, children, expanded, depth + 1)),
-      ],
+          if (hasKids && isExpanded)
+            ...kids.map((k) => _buildNode(context, k, children, expanded, depth + 1)),
+        ],
+      ),
     );
   }
 }
