@@ -228,7 +228,7 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
     }
   }
 
-  Future<void> _validate() async {
+  Future<void> _validate({bool preserveGenerationData = false}) async {
     if (!_hasProject) {
       setState(() {
         _error = 'Please select a project first.';
@@ -240,7 +240,9 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
       _validating = true;
       _error = null;
       _actionMessage = null;
-      _generationData = null;
+      if (!preserveGenerationData) {
+        _generationData = null;
+      }
     });
 
     try {
@@ -316,7 +318,7 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
         _actionMessage = 'Monthly batch generated successfully.';
       });
 
-      await _validate();
+      await _validate(preserveGenerationData: true);
     } catch (e) {
       setState(() {
         _error = e.toString();
