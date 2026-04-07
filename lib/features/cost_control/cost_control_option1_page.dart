@@ -1,5 +1,8 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../app/app_state.dart';
 import 'cost_control_service.dart';
 
 class CostControlOption1Page extends StatefulWidget {
@@ -10,7 +13,7 @@ class CostControlOption1Page extends StatefulWidget {
 }
 
 class _CostControlOption1PageState extends State<CostControlOption1Page> {
-  final CostControlService _service = CostControlService();
+  late CostControlService _service;
 
   final TextEditingController _fromController =
       TextEditingController(text: '2026-03-01');
@@ -27,10 +30,17 @@ class _CostControlOption1PageState extends State<CostControlOption1Page> {
   String? _selectedProject;
   String? _selectedTask;
 
+  bool _initialized = false;
+
   @override
-  void initState() {
-    super.initState();
-    _load();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _service = CostControlService(context.read<AppState>().api);
+
+    if (!_initialized) {
+      _initialized = true;
+      _load();
+    }
   }
 
   @override
@@ -177,15 +187,15 @@ class _CostControlOption1PageState extends State<CostControlOption1Page> {
           ),
         ),
       ),
-   );
+    );
 
-if (!kIsWeb) return content;
+    if (!kIsWeb) return content;
 
-return Container(
-  color: const Color(0xFFF4F6FA),
-  padding: const EdgeInsets.all(12),
-  child: content,
-);
+    return Container(
+      color: const Color(0xFFF4F6FA),
+      padding: const EdgeInsets.all(12),
+      child: content,
+    );
   }
 
   Widget _buildFilters() {
@@ -317,9 +327,9 @@ return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.red.withValues(alpha: 0.08),
+        color: Colors.red.withOpacity(0.08),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+        border: Border.all(color: Colors.red.withOpacity(0.30)),
       ),
       child: Text(
         _error!,
@@ -341,7 +351,7 @@ return Container(
           child: SingleChildScrollView(
             child: DataTable(
               headingRowColor: WidgetStatePropertyAll(
-                Colors.grey.withValues(alpha: 0.12),
+                Colors.grey.withOpacity(0.12),
               ),
               columns: const [
                 DataColumn(label: Text('Worker')),
@@ -359,7 +369,7 @@ return Container(
                 return DataRow(
                   color: isLast
                       ? WidgetStatePropertyAll(
-                          Colors.amber.withValues(alpha: 0.15),
+                          Colors.amber.withOpacity(0.15),
                         )
                       : null,
                   cells: [
@@ -400,7 +410,7 @@ return Container(
           child: SingleChildScrollView(
             child: DataTable(
               headingRowColor: WidgetStatePropertyAll(
-                Colors.grey.withValues(alpha: 0.12),
+                Colors.grey.withOpacity(0.12),
               ),
               columns: const [
                 DataColumn(label: Text('Project')),

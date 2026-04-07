@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../app/app_state.dart';
 import 'cost_control_service.dart';
 
 class CostControlOption2Page extends StatefulWidget {
@@ -9,7 +12,7 @@ class CostControlOption2Page extends StatefulWidget {
 }
 
 class _CostControlOption2PageState extends State<CostControlOption2Page> {
-  final CostControlService _service = CostControlService();
+  late CostControlService _service;
 
   final TextEditingController _fromController =
       TextEditingController(text: '2026-03-01');
@@ -26,10 +29,17 @@ class _CostControlOption2PageState extends State<CostControlOption2Page> {
   String? _selectedProject;
   String? _selectedTask;
 
+  bool _initialized = false;
+
   @override
-  void initState() {
-    super.initState();
-    _load();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _service = CostControlService(context.read<AppState>().api);
+
+    if (!_initialized) {
+      _initialized = true;
+      _load();
+    }
   }
 
   @override
@@ -314,9 +324,9 @@ class _CostControlOption2PageState extends State<CostControlOption2Page> {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.red.withValues(alpha: 0.08),
+        color: Colors.red.withOpacity(0.08),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+        border: Border.all(color: Colors.red.withOpacity(0.30)),
       ),
       child: Text(
         _error!,
@@ -338,7 +348,7 @@ class _CostControlOption2PageState extends State<CostControlOption2Page> {
           child: SingleChildScrollView(
             child: DataTable(
               headingRowColor: WidgetStatePropertyAll(
-                Colors.grey.withValues(alpha: 0.12),
+                Colors.grey.withOpacity(0.12),
               ),
               columns: const [
                 DataColumn(label: Text('Worker')),
@@ -384,7 +394,7 @@ class _CostControlOption2PageState extends State<CostControlOption2Page> {
           child: SingleChildScrollView(
             child: DataTable(
               headingRowColor: WidgetStatePropertyAll(
-                Colors.grey.withValues(alpha: 0.12),
+                Colors.grey.withOpacity(0.12),
               ),
               columns: const [
                 DataColumn(label: Text('Project')),

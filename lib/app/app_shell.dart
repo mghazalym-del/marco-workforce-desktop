@@ -15,6 +15,8 @@ import '../features/cost_control/cost_control_option2_page.dart';
 import '../features/workforce_structure/workforce_structure_page.dart';
 import '../features/task_control/pm_task_control_page.dart';
 import '../features/task_control/se_task_control_page.dart';
+import '../features/monthly_cost/monthly_cost_batch_page.dart';
+import '../features/daily_cost/daily_cost_generation_page.dart';
 
 class AppShell extends StatefulWidget {
   final ApiClient api;
@@ -73,22 +75,30 @@ class _AppShellState extends State<AppShell> {
         icon: Icons.account_tree,
         page: ProjectsPage(api: widget.api),
       ),
-
-      // ✅ NEW separate PM screen (does not affect Projects page)
       if (role == 'PM')
         _NavItem(
           label: 'PM Tasks',
           icon: Icons.assignment_outlined,
           page: PmTaskControlPage(api: widget.api),
         ),
-
       if (role == 'SE')
         _NavItem(
           label: 'SE Tasks',
           icon: Icons.engineering,
           page: SeTaskControlPage(api: widget.api),
         ),
-
+      if (role == 'COST_CONTROLLER' || role == 'PM')
+        const _NavItem(
+          label: 'Daily Cost',
+          icon: Icons.playlist_add_check_circle_outlined,
+          page: DailyCostGenerationPage(),
+        ),
+      if (role == 'COST_CONTROLLER' || role == 'PM')
+        const _NavItem(
+          label: 'Monthly Cost',
+          icon: Icons.calendar_view_month,
+          page: MonthlyCostBatchPage(),
+        ),
       _NavItem(
         label: 'Admin',
         icon: Icons.admin_panel_settings,
@@ -170,8 +180,6 @@ class _AppShellState extends State<AppShell> {
                         ),
                       ),
                       const Spacer(),
-
-                      // ✅ user identity
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 12,
@@ -205,17 +213,13 @@ class _AppShellState extends State<AppShell> {
                           ],
                         ),
                       ),
-
                       const SizedBox(width: 12),
-
                       OutlinedButton.icon(
                         onPressed: () => _pickDate(app),
                         icon: const Icon(Icons.calendar_today, size: 18),
                         label: Text(app.selectedDateStr),
                       ),
-
                       const SizedBox(width: 12),
-
                       OutlinedButton.icon(
                         onPressed: () async {
                           await app.logout();
