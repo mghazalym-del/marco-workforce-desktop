@@ -24,7 +24,6 @@ class _SupervisorDaysPageState extends State<SupervisorDaysPage> {
     return (s.length >= 10) ? s.substring(0, 10) : s;
   }
 
-
   bool _supervisorsLoading = false;
   String? _supervisorsError;
   List<Map<String, dynamic>> _supervisors = [];
@@ -38,10 +37,15 @@ class _SupervisorDaysPageState extends State<SupervisorDaysPage> {
   String? _controlError;
   List<Map<String, dynamic>> _controlWorkers = [];
 
-  // cache rollups per supervisorId|date
   final Map<String, Future<_Rollup>> _rollupFutureByDate = {};
 
   String _lastWorkDate = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSupervisors();
+  }
 
   @override
   void didChangeDependencies() {
@@ -50,16 +54,21 @@ class _SupervisorDaysPageState extends State<SupervisorDaysPage> {
     final workDate = app.selectedDateStr;
     if (_lastWorkDate != workDate) {
       _lastWorkDate = workDate;
-      // When date changes: clear caches and reload.
       _rollupFutureByDate.clear();
       _loadDays();
       _loadControlWorkers();
     }
   }
 
-  // ---------- helpers ----------
   List<Map<String, dynamic>> _extractList(dynamic json, {required String dataKey}) {
     try {
+      if (json is Map && json[dataKey] is List) {
+        return (json[dataKey] as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+
       if (json is Map && json['data'] is Map) {
         final data = json['data'] as Map;
         final list = data[dataKey];
@@ -67,6 +76,7 @@ class _SupervisorDaysPageState extends State<SupervisorDaysPage> {
           return list.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
         }
       }
+
       if (json is Map) {
         final list = json[dataKey];
         if (list is List) {
@@ -96,7 +106,6 @@ class _SupervisorDaysPageState extends State<SupervisorDaysPage> {
     }
   }
 
-  // ---------- loading ----------
   Future<void> _loadSupervisors() async {
     setState(() {
       _supervisorsLoading = true;
@@ -105,32 +114,43 @@ class _SupervisorDaysPageState extends State<SupervisorDaysPage> {
 
     final app = context.read<AppState>();
     final role = _roleUpper(app);
-
-    // Role-aware source:
-    // - SE/PM should prefer /api/v1/se/supervisors (scoped)
-    // - fallback to /api/v1/monitor/supervisors (works today in your setup)
-    final primary = (role == 'SE' || role == 'PM') ? '/api/v1/se/supervisors' : '/api/v1/monitor/supervisors';
-    final fallbacks = <String>[
-      // keep monitor as fallback always
-      '/api/v1/monitor/supervisors',
-      // if some builds still rely on admin route for supervisors
-      '/api/v1/admin/supervisors',
-    ];
+    final myId = app.profile?.employeeId ?? '';
 
     try {
-      final json = await _getJsonWithFallback(primary: primary, fallbacks: fallbacks);
+      List<Map<String, dynamic>> supervisors = [];
 
-      final supervisors = _extractList(json, dataKey: 'supervisors');
+      if (role == 'SE') {
+        final json = await widget.api.getJson('/se/supervisors');
+        supervisors = _extractList(json, dataKey: 'supervisors');
+      } else if (role == 'ADMIN' || role == 'SUPERVISOR') {
+        // Supervisor/admin sees only own record
+        supervisors = [
+          {
+            'employee_id': myId,
+            'full_name': app.profile?.fullName ?? myId,
+            'role': role,
+          }
+        ];
+      } else {
+        // PM and others can use broader list
+        final json = await _getJsonWithFallback(
+          primary: '/monitor/supervisors',
+          fallbacks: const [
+            '/admin/supervisors',
+          ],
+        );
+        supervisors = _extractList(json, dataKey: 'supervisors');
+      }
 
       setState(() {
         _supervisors = supervisors;
 
-        // keep selectedSupervisorId stable if still exists
         if (_supervisors.isEmpty) {
           selectedSupervisorId = null;
         } else {
           final current = selectedSupervisorId;
-          if (current == null || !_supervisors.any((s) => (s['employee_id'] ?? '').toString() == current)) {
+          if (current == null ||
+              !_supervisors.any((s) => (s['employee_id'] ?? '').toString() == current)) {
             selectedSupervisorId = (_supervisors.first['employee_id'] ?? '').toString();
           }
         }
@@ -168,14 +188,13 @@ class _SupervisorDaysPageState extends State<SupervisorDaysPage> {
     });
 
     try {
-      // Date range used by your UI (last 7 days, including selected date)
       final end = app.selectedDate;
       final start = end.subtract(const Duration(days: 7));
 
       String fmt(DateTime d) => d.toIso8601String().substring(0, 10);
 
       final json = await widget.api.getJson(
-        '/api/v1/monitor/supervisors/$supId/days',
+        '/monitor/supervisors/$supId/days',
         query: {'from': fmt(start), 'to': fmt(end)},
       );
 
@@ -213,10 +232,8 @@ class _SupervisorDaysPageState extends State<SupervisorDaysPage> {
     });
 
     try {
-      // Use the same day-control page to compute summaries per worker
-      // We pre-load the base worker list (name + status) so the Day Control tab loads quickly.
       final json = await widget.api.getJson(
-        '/api/v1/monitor/supervisors/$supId/workers',
+        '/monitor/supervisors/$supId/workers',
         query: {'work_date': app.selectedDateStr},
       );
 
@@ -235,228 +252,232 @@ class _SupervisorDaysPageState extends State<SupervisorDaysPage> {
     }
   }
 
-  // ---------- rollups (day rows) ----------
   Future<_Rollup> _getRollup(String workDate) {
     final key = "${selectedSupervisorId ?? ''}|$workDate";
     return _rollupFutureByDate.putIfAbsent(key, () async {
       final supId = selectedSupervisorId;
       if (supId == null || supId.isEmpty) return _Rollup.zero();
 
-      // Base worker list for that date
       final json = await widget.api.getJson(
-        '/api/v1/monitor/supervisors/$supId/workers',
+        '/monitor/supervisors/$supId/workers',
         query: {'work_date': workDate},
       );
       final workers = _extractList(json, dataKey: 'workers');
 
-      int sessions = 0;
-      int minutes = 0;
-      int openTasks = 0;
+      int workerCount = workers.length;
+      int openDays = 0;
+      int closedDays = 0;
 
-      final sums = await Future.wait(workers.map((w) async {
-        final empId = (w['employee_id'] ?? w['worker_id'] ?? '').toString();
-        if (empId.isEmpty) return <String, dynamic>{};
+      for (final w in workers) {
+        final s = ((w['day_status'] ?? '').toString()).toUpperCase();
+        if (s == 'OPEN') openDays++;
+        if (s == 'CLOSED' || s == 'FINALIZED') closedDays++;
+      }
 
+      int acceptedScans = 0;
+      int rejectedScans = 0;
+
+      for (final w in workers) {
+        final empId = (w['employee_id'] ?? '').toString();
+        if (empId.isEmpty) continue;
         try {
-          final sum = await widget.api.getJson(
-            '/api/v1/assignments/day/summary/$empId',
+          final day = await widget.api.getJson(
+            '/monitor/worker/$empId/day',
             query: {'work_date': workDate},
           );
 
-          if (sum is Map && sum['data'] is Map) return Map<String, dynamic>.from(sum['data'] as Map);
-          if (sum is Map) return Map<String, dynamic>.from(sum);
-        } catch (_) {}
-        return <String, dynamic>{};
-      }));
+          final summary = (day is Map && day['summary'] is Map)
+              ? Map<String, dynamic>.from(day['summary'])
+              : <String, dynamic>{};
 
-      for (final s in sums) {
-        final sc = s['sessions_count'];
-        final tm = s['total_minutes'];
-        sessions += (sc is int) ? sc : int.tryParse('$sc') ?? 0;
-        minutes += (tm is int) ? tm : int.tryParse('$tm') ?? 0;
-        if (s['open_task'] != null) openTasks++;
+          acceptedScans += (summary['accepted_scans'] as num?)?.toInt() ?? 0;
+          rejectedScans += (summary['rejected_scans'] as num?)?.toInt() ?? 0;
+        } catch (_) {}
       }
 
-      return _Rollup(sessionsCount: sessions, totalMinutes: minutes, openTasksCount: openTasks);
+      return _Rollup(
+        workers: workerCount,
+        acceptedScans: acceptedScans,
+        rejectedScans: rejectedScans,
+        openDays: openDays,
+        closedDays: closedDays,
+      );
     });
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    // load supervisors once when page opens
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadSupervisors());
   }
 
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
+    final workDate = app.selectedDateStr;
 
-    return Padding(
-      padding: const EdgeInsets.all(16),
+    return DefaultTabController(
+      length: 2,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Text('Supervisors', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-              const Spacer(),
-              IconButton(
-                tooltip: 'Refresh',
-                onPressed: _loadSupervisors,
-                icon: const Icon(Icons.refresh),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-
-          // Supervisor dropdown
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  value: selectedSupervisorId,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Supervisor',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: _supervisors.map((s) {
-                    final id = (s['employee_id'] ?? '').toString();
-                    final name = (s['full_name'] ?? '').toString();
-                    return DropdownMenuItem(value: id, child: Text('$id — $name'));
-                  }).toList(),
-                  onChanged: (v) async {
-                    setState(() {
-                      selectedSupervisorId = v;
-                      _rollupFutureByDate.clear();
-                    });
-                    await _loadDays();
-                    await _loadControlWorkers();
-                  },
+          Container(
+            padding: const EdgeInsets.all(12),
+            color: Colors.white,
+            child: Row(
+              children: [
+                Expanded(
+                  child: _supervisorsLoading
+                      ? const LinearProgressIndicator()
+                      : DropdownButtonFormField<String>(
+                          value: selectedSupervisorId,
+                          decoration: const InputDecoration(
+                            labelText: 'Supervisor',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: _supervisors.map((s) {
+                            final id = (s['employee_id'] ?? '').toString();
+                            final name = (s['full_name'] ?? '').toString();
+                            return DropdownMenuItem<String>(
+                              value: id,
+                              child: Text(name.isEmpty ? id : "$id — $name"),
+                            );
+                          }).toList(),
+                          onChanged: (v) async {
+                            setState(() {
+                              selectedSupervisorId = v;
+                              _rollupFutureByDate.clear();
+                            });
+                            await _loadDays();
+                            await _loadControlWorkers();
+                          },
+                        ),
                 ),
+                const SizedBox(width: 12),
+                OutlinedButton.icon(
+                  onPressed: _loadSupervisors,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Refresh'),
+                ),
+              ],
+            ),
+          ),
+          if (_supervisorsError != null)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                _supervisorsError!,
+                style: const TextStyle(color: Colors.red),
               ),
-              const SizedBox(width: 12),
-              if (_supervisorsLoading) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+            ),
+          const TabBar(
+            tabs: [
+              Tab(text: 'Days'),
+              Tab(text: 'Day Control'),
             ],
           ),
-
-          if (_supervisorsError != null) ...[
-            const SizedBox(height: 10),
-            Text('Error: $_supervisorsError', style: const TextStyle(color: Colors.red)),
-          ],
-
-          const SizedBox(height: 16),
-
-          // Tabs: Days + Day Control
           Expanded(
-            child: DefaultTabController(
-              length: 2,
-              child: Column(
-                children: [
-                  const TabBar(
-                    tabs: [
-                      Tab(text: 'Days'),
-                      Tab(text: 'Day Control'),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: TabBarView(
-                      children: [
-                        _buildDaysTab(app),
-                        _buildControlTab(app),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+            child: TabBarView(
+              children: [
+                _daysLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _daysError != null
+                        ? Center(
+                            child: Text(
+                              _daysError!,
+                              style: const TextStyle(color: Colors.red),
+                            ),
+                          )
+                        : ListView.separated(
+                            padding: const EdgeInsets.all(12),
+                            itemCount: _days.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 10),
+                            itemBuilder: (_, i) {
+                              final row = _days[i];
+                              final day = _dateOnly((row['work_date'] ?? '').toString());
+
+                              return FutureBuilder<_Rollup>(
+                                future: _getRollup(day),
+                                builder: (context, snap) {
+                                  final rollup = snap.data ?? _Rollup.zero();
+                                  return Card(
+                                    child: ListTile(
+                                      title: Text("Date: $day"),
+                                      subtitle: Text(
+                                        "Workers: ${rollup.workers} • "
+                                        "Accepted: ${rollup.acceptedScans} • "
+                                        "Rejected: ${rollup.rejectedScans} • "
+                                        "Open: ${rollup.openDays} • "
+                                        "Closed: ${rollup.closedDays}",
+                                      ),
+                                      trailing: const Icon(Icons.chevron_right),
+                                      onTap: selectedSupervisorId == null
+                                          ? null
+                                          : () {
+                                              Navigator.of(context).push(
+                                                MaterialPageRoute(
+                                                  builder: (_) => SupervisorDayWorkersPage(
+                                                    api: widget.api,
+                                                    supervisorId: selectedSupervisorId!,
+                                                    workDate: day,
+                                                    onDataChanged: () async {
+                                                      _rollupFutureByDate.clear();
+                                                      await _loadDays();
+                                                      await _loadControlWorkers();
+                                                    },
+                                                  ),
+                                                ),
+                                              );
+                                            },
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          ),
+                _controlLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _controlError != null
+                        ? Center(
+                            child: Text(
+                              _controlError!,
+                              style: const TextStyle(color: Colors.red),
+                            ),
+                          )
+                        : selectedSupervisorId == null
+                            ? const Center(child: Text("No supervisor selected"))
+                            : SupervisorDayWorkersPage(
+                                api: widget.api,
+                                supervisorId: selectedSupervisorId!,
+                                workDate: workDate,
+                                onDataChanged: () async {
+                                  _rollupFutureByDate.clear();
+                                  await _loadDays();
+                                  await _loadControlWorkers();
+                                },
+                              ),
+              ],
             ),
           ),
         ],
       ),
     );
   }
-
-  Widget _buildDaysTab(AppState app) {
-    if (_daysLoading) return const Center(child: CircularProgressIndicator());
-    if (_daysError != null) return Center(child: Text('Error: $_daysError'));
-    if (_days.isEmpty) return const Center(child: Text('No days in range.'));
-
-    return ListView.separated(
-      itemCount: _days.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
-      itemBuilder: (context, i) {
-        final day = _days[i];
-        final workDateRaw = (day['work_date'] ?? day['date'] ?? '').toString();
-        final workDate = _dateOnly(workDateRaw);
-
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(workDate, style: const TextStyle(fontWeight: FontWeight.w700)),
-                const SizedBox(height: 8),
-                FutureBuilder<_Rollup>(
-                  future: _getRollup(workDate),
-                  builder: (context, snap) {
-                    final r = snap.data;
-                    return Row(
-                      children: [
-                        if (r == null) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
-                        if (r != null) ...[
-                          Text("Sessions: ${r.sessionsCount}  "),
-                          Text("Minutes: ${r.totalMinutes}  "),
-                          Text("Open tasks: ${r.openTasksCount}"),
-                        ],
-                      ],
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildControlTab(AppState app) {
-    final supId = selectedSupervisorId;
-    if (supId == null || supId.isEmpty) {
-      return const Center(child: Text('Select a supervisor.'));
-    }
-
-    if (_controlLoading) return const Center(child: CircularProgressIndicator());
-    if (_controlError != null) return Center(child: Text('Error: $_controlError'));
-
-    // Delegate actual control logic to the workers page (it fetches + summary + actions)
-    return SupervisorDayWorkersPage(
-      api: widget.api,
-      supervisorId: supId,
-      workDate: app.selectedDateStr,
-      onDataChanged: () async {
-        // When actions happen (close/finalize/return), refresh both tabs.
-        _rollupFutureByDate.clear();
-        await _loadDays();
-        await _loadControlWorkers();
-      },
-    );
-  }
 }
 
 class _Rollup {
-  final int sessionsCount;
-  final int totalMinutes;
-  final int openTasksCount;
+  final int workers;
+  final int acceptedScans;
+  final int rejectedScans;
+  final int openDays;
+  final int closedDays;
 
   const _Rollup({
-    required this.sessionsCount,
-    required this.totalMinutes,
-    required this.openTasksCount,
+    required this.workers,
+    required this.acceptedScans,
+    required this.rejectedScans,
+    required this.openDays,
+    required this.closedDays,
   });
 
-  factory _Rollup.zero() => const _Rollup(sessionsCount: 0, totalMinutes: 0, openTasksCount: 0);
+  factory _Rollup.zero() => const _Rollup(
+        workers: 0,
+        acceptedScans: 0,
+        rejectedScans: 0,
+        openDays: 0,
+        closedDays: 0,
+      );
 }

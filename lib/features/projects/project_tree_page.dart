@@ -142,6 +142,14 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
           "Close the existing release first, then create a new one.";
     }
 
+    if (raw.contains('"code":"SUPERVISOR_NOT_UNDER_SE"')) {
+      return "You can only release tasks to supervisors under your supervision.";
+    }
+
+    if (raw.contains('"code":"SUPERVISOR_NOT_FOUND"')) {
+      return "The selected supervisor was not found.";
+    }
+
     return raw;
   }
 
@@ -174,65 +182,125 @@ class _ProjectTreePageState extends State<ProjectTreePage> {
     }
   }
 
+  Future<List<Map<String, dynamic>>> _loadScopedSupervisorsForSe() async {
+    final res = await widget.api.getJson('/se/supervisors');
+
+    if (res is Map && res['supervisors'] is List) {
+      return (res['supervisors'] as List)
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    }
+
+    if (res is Map && res['data'] is Map) {
+      final data = Map<String, dynamic>.from(res['data']);
+      if (data['supervisors'] is List) {
+        return (data['supervisors'] as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+    }
+
+    return [];
+  }
+
   Future<void> _releaseToSupervisor(WorkItemNode n) async {
-    final supervisorCtrl = TextEditingController();
+    String? selectedSupervisorId;
     final minCtrl = TextEditingController(text: "0");
     final maxCtrl = TextEditingController();
 
+    List<Map<String, dynamic>> supervisors = [];
+
+    try {
+      supervisors = await _loadScopedSupervisorsForSe();
+    } catch (e) {
+      _popup("Load Supervisors Failed", _friendlyApiError(e));
+      return;
+    }
+
+    if (supervisors.isEmpty) {
+      _popup(
+        "No Supervisors Available",
+        "No supervisors are linked under your Site Engineer account.",
+      );
+      return;
+    }
+
+    selectedSupervisorId =
+        (supervisors.first['employee_id'] ?? '').toString().trim();
+
     final submitted = await showDialog<Map<String, String>>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Release to Supervisor"),
-        content: SizedBox(
-          width: 420,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: supervisorCtrl,
-                decoration: const InputDecoration(
-                  labelText: "Supervisor Employee ID",
-                  hintText: "Example: E2001",
+      builder: (_) => StatefulBuilder(
+        builder: (context, setLocal) => AlertDialog(
+          title: const Text("Release to Supervisor"),
+          content: SizedBox(
+            width: 460,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  value: selectedSupervisorId,
+                  decoration: const InputDecoration(
+                    labelText: "Supervisor",
+                    border: OutlineInputBorder(),
+                  ),
+                  items: supervisors.map((s) {
+                    final id = (s['employee_id'] ?? '').toString();
+                    final name = (s['full_name'] ?? '').toString();
+                    return DropdownMenuItem<String>(
+                      value: id,
+                      child: Text(name.isEmpty ? id : "$id — $name"),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setLocal(() {
+                      selectedSupervisorId = value;
+                    });
+                  },
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: minCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: "Minimum Workers",
-                  hintText: "Example: 2",
+                const SizedBox(height: 12),
+                TextField(
+                  controller: minCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: "Minimum Workers",
+                    hintText: "Example: 2",
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: maxCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: "Maximum Workers",
-                  hintText: "Example: 12",
+                const SizedBox(height: 12),
+                TextField(
+                  controller: maxCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: "Maximum Workers",
+                    hintText: "Example: 12",
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(
-              context,
-              {
-                "supervisor_employee_id": supervisorCtrl.text.trim(),
-                "min_workers": minCtrl.text.trim(),
-                "max_workers": maxCtrl.text.trim(),
-              },
+              ],
             ),
-            child: const Text("Release"),
           ),
-        ],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(
+                context,
+                {
+                  "supervisor_employee_id": (selectedSupervisorId ?? '').trim(),
+                  "min_workers": minCtrl.text.trim(),
+                  "max_workers": maxCtrl.text.trim(),
+                },
+              ),
+              child: const Text("Release"),
+            ),
+          ],
+        ),
       ),
     );
 
