@@ -19,15 +19,10 @@ class _ActivityPageState extends State<ActivityPage> {
   String _lastWorkDate = '';
 
   @override
-  void initState() {
-    super.initState();
-    // initial load will happen from didChangeDependencies
-  }
-
-  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final workDate = context.watch<AppState>().selectedDateStr;
+
     if (workDate != _lastWorkDate) {
       _lastWorkDate = workDate;
       _load(workDate);
@@ -43,48 +38,14 @@ class _ActivityPageState extends State<ActivityPage> {
 
     try {
       final res = await widget.api.getJson(
-        '/monitor/activity/projects',
+        '/monitor/activity',
         query: {'work_date': workDate},
       );
 
-      // ApiClient.getJson returns "data" (per our earlier fixes),
-      // so res might already be the data node.
-      // Accept multiple shapes safely:
-      // - { activity: [ ... ] }
-      // - { items: [ ... ] }
-      // - { projects: [ ... ] }
-      // - [ ... ]
-      List list = [];
-      if (res is List) {
-        list = res;
-      } else if (res is Map) {
-        final a = res['activity'];
-        final it = res['items'];
-        final prj = res['projects'];
-
-        if (a is List) list = a;
-        else if (it is List) list = it;
-        else if (prj is List) list = prj;
-        else {
-          // last resort: first list found
-          for (final v in res.values) {
-            if (v is List) {
-              list = v;
-              break;
-            }
-          }
-        }
-      }
-
-      final parsed = list
-          .whereType<dynamic>()
-          .map((e) => (e is Map)
-              ? Map<String, dynamic>.from(e as Map)
-              : <String, dynamic>{'value': e})
-          .toList();
+      final list = (res['activities'] ?? []) as List;
 
       setState(() {
-        items = parsed;
+        items = list.map((e) => Map<String, dynamic>.from(e)).toList();
         loading = false;
       });
     } catch (e) {
@@ -95,45 +56,19 @@ class _ActivityPageState extends State<ActivityPage> {
     }
   }
 
-  String _titleOf(Map<String, dynamic> m) {
-    // Common backend keys (we try best effort)
-    return (m['project_name'] ??
-            m['project'] ??
-            m['name'] ??
-            m['title'] ??
-            'Activity')
-        .toString();
+  Color _statusColor(String status) {
+    if (status == 'Accepted') return Colors.green;
+    return Colors.red;
   }
 
-  String _subtitleOf(Map<String, dynamic> m) {
-    // Show useful details if present
-    final parts = <String>[];
-
-    final workers = m['workers_count'] ?? m['workers'];
-    if (workers != null) parts.add('Workers: $workers');
-
-    final scansA = m['accepted_scans'];
-    final scansR = m['rejected_scans'];
-    if (scansA != null || scansR != null) {
-      parts.add('Scans: ${scansA ?? 0} accepted / ${scansR ?? 0} rejected');
+  String _time(String? ts) {
+    if (ts == null) return '-';
+    try {
+      final d = DateTime.parse(ts).toLocal();
+      return "${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}";
+    } catch (_) {
+      return ts;
     }
-
-    final first = m['first_activity'];
-    final last = m['last_activity'];
-    if (first != null || last != null) {
-      parts.add('First: ${first ?? "-"}  Last: ${last ?? "-"}');
-    }
-
-    // If nothing matched, just dump a short snippet:
-    if (parts.isEmpty) {
-      final s = m.entries
-          .take(3)
-          .map((e) => '${e.key}=${e.value}')
-          .join(' • ');
-      return s.isEmpty ? '' : s;
-    }
-
-    return parts.join(' • ');
   }
 
   @override
@@ -141,26 +76,85 @@ class _ActivityPageState extends State<ActivityPage> {
     if (loading) {
       return const Center(child: CircularProgressIndicator());
     }
+
     if (error != null) {
       return Center(child: Text(error!));
     }
+
     if (items.isEmpty) {
       return const Center(child: Text('No activity for the selected date.'));
     }
 
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: items.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
-      itemBuilder: (_, i) {
-        final m = items[i];
-        return Card(
-          child: ListTile(
-            title: Text(_titleOf(m)),
-            subtitle: Text(_subtitleOf(m)),
+    return Column(
+      children: [
+        // Header
+        Container(
+          padding: const EdgeInsets.all(12),
+          color: Colors.grey.shade200,
+          child: Row(
+            children: const [
+              Expanded(flex: 1, child: Text("Time", style: TextStyle(fontWeight: FontWeight.bold))),
+              Expanded(flex: 2, child: Text("Worker")),
+              Expanded(flex: 2, child: Text("Supervisor")),
+              Expanded(flex: 2, child: Text("Task")),
+              Expanded(flex: 1, child: Text("Status")),
+            ],
           ),
-        );
-      },
+        ),
+
+        Expanded(
+          child: ListView.builder(
+            itemCount: items.length,
+            itemBuilder: (_, i) {
+              final m = items[i];
+
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(flex: 1, child: Text(_time(m['scan_timestamp_server']))),
+
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        "${m['worker_name'] ?? '-'} (${m['worker_id'] ?? ''})",
+                      ),
+                    ),
+
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        "${m['supervisor_name'] ?? '-'} (${m['supervisor_id'] ?? ''})",
+                      ),
+                    ),
+
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        "${m['task_code'] ?? ''} ${m['task_name'] ?? ''}",
+                      ),
+                    ),
+
+                    Expanded(
+                      flex: 1,
+                      child: Text(
+                        m['scan_status'] ?? '-',
+                        style: TextStyle(
+                          color: _statusColor(m['scan_status']),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }
