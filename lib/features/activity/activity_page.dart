@@ -118,8 +118,11 @@ class _ActivityPageState extends State<ActivityPage> {
     }).toList();
   }
 
-  int get _acceptedCount => items.where((m) => _statusOf(m).toUpperCase() == 'ACCEPTED').length;
-  int get _rejectedCount => items.where((m) => _statusOf(m).toUpperCase() == 'REJECTED').length;
+  int get _acceptedCount =>
+      items.where((m) => _statusOf(m).toUpperCase() == 'ACCEPTED').length;
+  int get _rejectedCount =>
+      items.where((m) => _statusOf(m).toUpperCase() == 'REJECTED').length;
+
   int get _workerCount {
     final set = <String>{};
     for (final m in items) {
@@ -194,6 +197,48 @@ class _ActivityPageState extends State<ActivityPage> {
     );
   }
 
+  Future<void> _openWorkerDrilldown(Map<String, dynamic> row) async {
+    final workerId = _safe(row['worker_id']);
+    final workDate = _lastWorkDate;
+
+    if (workerId.isEmpty) {
+      _showSimpleDialog(
+        title: 'Activity Details',
+        content: 'Worker ID is missing for this row.',
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _WorkerDayDrilldownDialog(
+        api: widget.api,
+        workDate: workDate,
+        activityRow: row,
+      ),
+    );
+  }
+
+  void _showSimpleDialog({
+    required String title,
+    required String content,
+  }) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(title),
+        content: SelectableText(content),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _activityTable(List<Map<String, dynamic>> rows) {
     return Container(
       decoration: BoxDecoration(
@@ -231,41 +276,18 @@ class _ActivityPageState extends State<ActivityPage> {
                 final supervisorName = _safe(m['supervisor_name']);
                 final supervisorId = _safe(m['supervisor_id']);
                 final projectId = _safe(m['project_id']);
-                final taskCode = _safe(m['task_code']).isEmpty ? _safe(m['task_id']) : _safe(m['task_code']);
+                final taskCode =
+                    _safe(m['task_code']).isEmpty ? _safe(m['task_id']) : _safe(m['task_code']);
                 final taskName = _safe(m['task_name']);
                 final status = _statusOf(m);
-                final time = _time(_safe(m['scan_timestamp_server']).isEmpty
-                    ? _safe(m['scan_timestamp_device'])
-                    : _safe(m['scan_timestamp_server']));
+                final time = _time(
+                  _safe(m['scan_timestamp_server']).isEmpty
+                      ? _safe(m['scan_timestamp_device'])
+                      : _safe(m['scan_timestamp_server']),
+                );
 
                 return InkWell(
-                  onTap: () {
-                    showDialog(
-                      context: context,
-                      builder: (_) => AlertDialog(
-                        title: const Text('Activity Details'),
-                        content: SizedBox(
-                          width: 520,
-                          child: SingleChildScrollView(
-                            child: SelectableText(
-                              "Time: $time\n"
-                              "Worker: ${workerName.isEmpty ? '-' : workerName} ${workerId.isEmpty ? '' : '($workerId)'}\n"
-                              "Supervisor: ${supervisorName.isEmpty ? '-' : supervisorName} ${supervisorId.isEmpty ? '' : '($supervisorId)'}\n"
-                              "Project: ${projectId.isEmpty ? '-' : projectId}\n"
-                              "Task: ${taskCode.isEmpty ? '-' : taskCode} ${taskName.isEmpty ? '' : '- $taskName'}\n"
-                              "Status: $status",
-                            ),
-                          ),
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('Close'),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
+                  onTap: () => _openWorkerDrilldown(m),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                     child: Row(
@@ -412,6 +434,324 @@ class _ActivityPageState extends State<ActivityPage> {
                     child: Text('No activity matches the current filters.'),
                   )
                 : _activityTable(rows),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkerDayDrilldownDialog extends StatefulWidget {
+  final ApiClient api;
+  final String workDate;
+  final Map<String, dynamic> activityRow;
+
+  const _WorkerDayDrilldownDialog({
+    required this.api,
+    required this.workDate,
+    required this.activityRow,
+  });
+
+  @override
+  State<_WorkerDayDrilldownDialog> createState() => _WorkerDayDrilldownDialogState();
+}
+
+class _WorkerDayDrilldownDialogState extends State<_WorkerDayDrilldownDialog> {
+  bool _loading = true;
+  String? _error;
+  Map<String, dynamic>? _data;
+
+  String _safe(dynamic v) => (v ?? '').toString();
+
+  String _fmtTs(dynamic ts) {
+    final s = _safe(ts);
+    if (s.isEmpty) return '-';
+    try {
+      final d = DateTime.parse(s).toLocal();
+      return "${d.year.toString().padLeft(4, '0')}-"
+          "${d.month.toString().padLeft(2, '0')}-"
+          "${d.day.toString().padLeft(2, '0')} "
+          "${d.hour.toString().padLeft(2, '0')}:"
+          "${d.minute.toString().padLeft(2, '0')}:"
+          "${d.second.toString().padLeft(2, '0')}";
+    } catch (_) {
+      return s;
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final workerId = _safe(widget.activityRow['worker_id']);
+
+    setState(() {
+      _loading = true;
+      _error = null;
+      _data = null;
+    });
+
+    try {
+      final res = await widget.api.getJson(
+        '/monitor/worker/$workerId/day',
+        query: {'work_date': widget.workDate},
+      );
+
+      setState(() {
+        _data = (res is Map) ? Map<String, dynamic>.from(res) : <String, dynamic>{};
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  Widget _sectionTitle(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12, bottom: 8),
+      child: Text(
+        text,
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final row = widget.activityRow;
+    final workerName = _safe(row['worker_name']);
+    final workerId = _safe(row['worker_id']);
+    final supervisorName = _safe(row['supervisor_name']);
+    final supervisorId = _safe(row['supervisor_id']);
+    final projectId = _safe(row['project_id']);
+    final taskCode = _safe(row['task_code']).isEmpty ? _safe(row['task_id']) : _safe(row['task_code']);
+    final taskName = _safe(row['task_name']);
+    final status = _safe(row['scan_status']);
+
+    final summary = (_data != null && _data!['summary'] is Map)
+        ? Map<String, dynamic>.from(_data!['summary'])
+        : <String, dynamic>{};
+
+    final sessions = (_data != null && _data!['sessions'] is List)
+        ? List<Map<String, dynamic>>.from(
+            (_data!['sessions'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)),
+          )
+        : <Map<String, dynamic>>[];
+
+    final scans = (_data != null && _data!['scans'] is List)
+        ? List<Map<String, dynamic>>.from(
+            (_data!['scans'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)),
+          )
+        : <Map<String, dynamic>>[];
+
+    return Dialog(
+      insetPadding: const EdgeInsets.all(24),
+      child: SizedBox(
+        width: 900,
+        height: 700,
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : (_error != null)
+                  ? Center(
+                      child: Text(
+                        _error!,
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Worker Day Drilldown • $workerName${workerId.isEmpty ? '' : ' ($workerId)'}',
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: _load,
+                              icon: const Icon(Icons.refresh),
+                              tooltip: 'Refresh',
+                            ),
+                          ],
+                        ),
+                        Text('Work Date: ${widget.workDate}'),
+                        const SizedBox(height: 12),
+
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 12,
+                          children: [
+                            _InfoBox(
+                              title: 'Supervisor',
+                              value: supervisorName.isEmpty
+                                  ? (supervisorId.isEmpty ? '-' : supervisorId)
+                                  : '$supervisorName${supervisorId.isEmpty ? '' : ' ($supervisorId)'}',
+                            ),
+                            _InfoBox(
+                              title: 'Project',
+                              value: projectId.isEmpty ? '-' : projectId,
+                            ),
+                            _InfoBox(
+                              title: 'Task',
+                              value: taskCode.isEmpty
+                                  ? '-'
+                                  : '$taskCode${taskName.isEmpty ? '' : ' — $taskName'}',
+                            ),
+                            _InfoBox(
+                              title: 'Selected Row Status',
+                              value: status.isEmpty ? '-' : status,
+                            ),
+                            _InfoBox(
+                              title: 'Accepted Scans',
+                              value: _safe(summary['accepted_scans']).isEmpty
+                                  ? '0'
+                                  : _safe(summary['accepted_scans']),
+                            ),
+                            _InfoBox(
+                              title: 'Rejected Scans',
+                              value: _safe(summary['rejected_scans']).isEmpty
+                                  ? '0'
+                                  : _safe(summary['rejected_scans']),
+                            ),
+                            _InfoBox(
+                              title: 'Total Minutes',
+                              value: _safe(summary['total_minutes']).isEmpty
+                                  ? '0'
+                                  : _safe(summary['total_minutes']),
+                            ),
+                          ],
+                        ),
+
+                        _sectionTitle('Task Sessions'),
+                        Expanded(
+                          child: sessions.isEmpty
+                              ? const Center(child: Text('No sessions found for this worker/day.'))
+                              : Container(
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: Colors.grey.shade300),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: ListView.separated(
+                                    itemCount: sessions.length,
+                                    separatorBuilder: (_, __) =>
+                                        Divider(height: 1, color: Colors.grey.shade200),
+                                    itemBuilder: (_, i) {
+                                      final s = sessions[i];
+                                      return ListTile(
+                                        title: Text(
+                                          "${_safe(s['project_id'])} / ${_safe(s['task_id'])}",
+                                        ),
+                                        subtitle: Text(
+                                          "Start: ${_fmtTs(s['start_ts'])}   •   "
+                                          "End: ${_fmtTs(s['end_ts'])}   •   "
+                                          "Minutes: ${_safe(s['duration_minutes']).isEmpty ? '0' : _safe(s['duration_minutes'])}",
+                                        ),
+                                        trailing: Text(
+                                          _safe(s['status']).isEmpty ? '-' : _safe(s['status']),
+                                          style: const TextStyle(fontWeight: FontWeight.w600),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                        ),
+
+                        _sectionTitle('Scans'),
+                        Expanded(
+                          child: scans.isEmpty
+                              ? const Center(child: Text('No scans found for this worker/day.'))
+                              : Container(
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: Colors.grey.shade300),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: ListView.separated(
+                                    itemCount: scans.length,
+                                    separatorBuilder: (_, __) =>
+                                        Divider(height: 1, color: Colors.grey.shade200),
+                                    itemBuilder: (_, i) {
+                                      final s = scans[i];
+                                      return ListTile(
+                                        title: Text(
+                                          "${_safe(s['project_id'])} / ${_safe(s['task_id'])}",
+                                        ),
+                                        subtitle: Text(
+                                          "Device Time: ${_fmtTs(s['scan_timestamp_device'])}   •   "
+                                          "Server Time: ${_fmtTs(s['scan_timestamp_server'])}",
+                                        ),
+                                        trailing: Text(
+                                          _safe(s['scan_status']).isEmpty ? '-' : _safe(s['scan_status']),
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            color: _safe(s['scan_status']).toUpperCase() == 'ACCEPTED'
+                                                ? Colors.green
+                                                : Colors.red,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                        ),
+
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('Close'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+        ),
+      ),
+    );
+  }
+}
+
+class _InfoBox extends StatelessWidget {
+  final String title;
+  final String value;
+
+  const _InfoBox({
+    required this.title,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 190,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.withOpacity(0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+          const SizedBox(height: 6),
+          Text(
+            value.isEmpty ? '-' : value,
+            style: const TextStyle(fontWeight: FontWeight.w700),
           ),
         ],
       ),
