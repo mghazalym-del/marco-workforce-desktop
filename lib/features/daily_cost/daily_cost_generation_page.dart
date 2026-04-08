@@ -8,7 +8,8 @@ class DailyCostGenerationPage extends StatefulWidget {
   const DailyCostGenerationPage({super.key});
 
   @override
-  State<DailyCostGenerationPage> createState() => _DailyCostGenerationPageState();
+  State<DailyCostGenerationPage> createState() =>
+      _DailyCostGenerationPageState();
 }
 
 class _DailyCostGenerationPageState extends State<DailyCostGenerationPage> {
@@ -18,6 +19,7 @@ class _DailyCostGenerationPageState extends State<DailyCostGenerationPage> {
   bool _loadingProjects = false;
   bool _validating = false;
   bool _generating = false;
+  bool _monthLocked = false;
 
   String? _error;
   String? _actionMessage;
@@ -53,6 +55,12 @@ class _DailyCostGenerationPageState extends State<DailyCostGenerationPage> {
         "${d.day.toString().padLeft(2, '0')}";
   }
 
+  String _displayWorkDate(dynamic raw) {
+    final s = _safe(raw).trim();
+    if (s.isEmpty) return '-';
+    return s.length >= 10 ? s.substring(0, 10) : s;
+  }
+
   Future<void> _pickFromDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -71,6 +79,7 @@ class _DailyCostGenerationPageState extends State<DailyCostGenerationPage> {
       _generationResult = null;
       _error = null;
       _actionMessage = null;
+      _monthLocked = false;
     });
   }
 
@@ -89,6 +98,7 @@ class _DailyCostGenerationPageState extends State<DailyCostGenerationPage> {
       _generationResult = null;
       _error = null;
       _actionMessage = null;
+      _monthLocked = false;
     });
   }
 
@@ -120,7 +130,8 @@ class _DailyCostGenerationPageState extends State<DailyCostGenerationPage> {
       String? nextSelected = _selectedProjectId;
       if (projects.isNotEmpty) {
         final exists = projects.any(
-          (p) => _safe(p['project_code']).trim() == (nextSelected ?? '').trim(),
+          (p) =>
+              _safe(p['project_code']).trim() == (nextSelected ?? '').trim(),
         );
         if (!exists) {
           nextSelected = _safe(projects.first['project_code']).trim();
@@ -159,6 +170,7 @@ class _DailyCostGenerationPageState extends State<DailyCostGenerationPage> {
       _error = null;
       _actionMessage = null;
       _generationResult = null;
+      _monthLocked = false;
     });
 
     try {
@@ -173,7 +185,10 @@ class _DailyCostGenerationPageState extends State<DailyCostGenerationPage> {
 
       List<Map<String, dynamic>> rows = [];
       if (res is List) {
-        rows = res.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+        rows = res
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
       } else if (res is Map && res['data'] is List) {
         rows = (res['data'] as List)
             .whereType<Map>()
@@ -181,14 +196,22 @@ class _DailyCostGenerationPageState extends State<DailyCostGenerationPage> {
             .toList();
       }
 
+      final locked = rows.any(
+        (r) => _safe(r['blocker_reason']) == 'MONTH_ALREADY_APPROVED',
+      );
+
       setState(() {
         _rows = rows;
-        _actionMessage = 'Validation completed.';
+        _monthLocked = locked;
+        _actionMessage = locked
+            ? 'This month is already approved by PM and is locked.'
+            : 'Validation completed.';
       });
     } catch (e) {
       setState(() {
         _error = e.toString();
         _rows = [];
+        _monthLocked = false;
       });
     } finally {
       setState(() {
@@ -198,6 +221,14 @@ class _DailyCostGenerationPageState extends State<DailyCostGenerationPage> {
   }
 
   Future<void> _generateAllEligible() async {
+    if (_monthLocked) {
+      setState(() {
+        _error =
+            'This month is already approved by PM. Generation is not allowed.';
+      });
+      return;
+    }
+
     if (!_hasProject) {
       setState(() {
         _error = 'Please select a project first.';
@@ -208,6 +239,7 @@ class _DailyCostGenerationPageState extends State<DailyCostGenerationPage> {
     if (_rows.isEmpty) {
       await _validate();
       if (_rows.isEmpty) return;
+      if (_monthLocked) return;
     }
 
     setState(() {
@@ -227,14 +259,21 @@ class _DailyCostGenerationPageState extends State<DailyCostGenerationPage> {
       );
 
       setState(() {
-        _generationResult = (res is Map) ? Map<String, dynamic>.from(res) : null;
+        _generationResult =
+            (res is Map) ? Map<String, dynamic>.from(res) : null;
         _actionMessage = 'Daily cost generation completed.';
       });
 
       await _validate();
     } catch (e) {
+      final msg = e.toString();
+
       setState(() {
-        _error = e.toString();
+        _error = msg;
+        if (msg.contains('MONTH_LOCKED')) {
+          _monthLocked = true;
+          _actionMessage = null;
+        }
       });
     } finally {
       setState(() {
@@ -243,20 +282,52 @@ class _DailyCostGenerationPageState extends State<DailyCostGenerationPage> {
     }
   }
 
-  int get _eligibleCount => _rows.where((r) => r['eligible'] == true).length;
-  int get _alreadyGeneratedCount =>
-      _rows.where((r) => r['blocker_reason']?.toString() == 'ALREADY_GENERATED').length;
-  int get _blockedCount => _rows.where((r) => r['eligible'] != true).length;
+  int get _eligibleCount => _monthLocked
+      ? 0
+      : _rows.where((r) => r['eligible'] == true).length;
+
+  int get _alreadyGeneratedCount => _monthLocked
+      ? 0
+      : _rows
+          .where((r) => _safe(r['blocker_reason']) == 'ALREADY_GENERATED')
+          .length;
+
+  int get _monthLockedCount => _monthLocked
+      ? _rows.length
+      : _rows
+          .where((r) => _safe(r['blocker_reason']) == 'MONTH_ALREADY_APPROVED')
+          .length;
+
+  int get _blockedCount => _monthLocked
+      ? 0
+      : _rows.where((r) => r['eligible'] != true).length;
 
   Color _statusColor(bool eligible, String reason) {
+    if (_monthLocked || reason == 'MONTH_ALREADY_APPROVED') {
+      return Colors.orange;
+    }
     if (eligible) return Colors.green;
     if (reason == 'ALREADY_GENERATED') return Colors.blue;
     return Colors.red;
   }
 
   String _statusText(bool eligible, String reason) {
+    if (_monthLocked || reason == 'MONTH_ALREADY_APPROVED') {
+      return 'MONTH LOCKED';
+    }
     if (eligible) return 'ELIGIBLE';
     if (reason.isEmpty) return 'BLOCKED';
+    return reason;
+  }
+
+  String _reasonText(String reason) {
+    if (_monthLocked || reason == 'MONTH_ALREADY_APPROVED') {
+      return 'Month approved by PM';
+    }
+    if (reason.isEmpty) return '-';
+    if (reason == 'ALREADY_GENERATED') return 'Already generated';
+    if (reason == 'DAY_NOT_FINALIZED') return 'Day not finalized';
+    if (reason == 'OPEN_SESSIONS_EXIST') return 'Open sessions exist';
     return reason;
   }
 
@@ -286,7 +357,8 @@ class _DailyCostGenerationPageState extends State<DailyCostGenerationPage> {
                 children: [
                   Text(
                     title,
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                    style:
+                        TextStyle(fontSize: 12, color: Colors.grey.shade700),
                   ),
                   const SizedBox(height: 6),
                   Text(
@@ -306,6 +378,25 @@ class _DailyCostGenerationPageState extends State<DailyCostGenerationPage> {
   }
 
   Widget _buildStateBanner() {
+    if (_monthLocked) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.orange.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.orange.withOpacity(0.30)),
+        ),
+        child: const Text(
+          'This month is already approved by PM. Daily cost is locked.',
+          style: TextStyle(
+            color: Colors.orange,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      );
+    }
+
     if (_error != null) {
       return Container(
         width: double.infinity,
@@ -345,9 +436,10 @@ class _DailyCostGenerationPageState extends State<DailyCostGenerationPage> {
     return Wrap(
       spacing: 12,
       runSpacing: 12,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         SizedBox(
-          width: 320,
+          width: 280,
           child: DropdownButtonFormField<String>(
             value: _hasProject ? _selectedProjectId : null,
             decoration: const InputDecoration(
@@ -359,7 +451,10 @@ class _DailyCostGenerationPageState extends State<DailyCostGenerationPage> {
               final name = _safe(p['project_name']).trim();
               return DropdownMenuItem<String>(
                 value: code,
-                child: Text(name.isEmpty ? code : '$code — $name'),
+                child: Text(
+                  name.isEmpty ? code : '$code — $name',
+                  overflow: TextOverflow.ellipsis,
+                ),
               );
             }).toList(),
             onChanged: _loadingProjects
@@ -371,12 +466,13 @@ class _DailyCostGenerationPageState extends State<DailyCostGenerationPage> {
                       _generationResult = null;
                       _error = null;
                       _actionMessage = null;
+                      _monthLocked = false;
                     });
                   },
           ),
         ),
         SizedBox(
-          width: 160,
+          width: 150,
           child: OutlinedButton.icon(
             onPressed: _pickFromDate,
             icon: const Icon(Icons.calendar_month),
@@ -384,7 +480,7 @@ class _DailyCostGenerationPageState extends State<DailyCostGenerationPage> {
           ),
         ),
         SizedBox(
-          width: 160,
+          width: 150,
           child: OutlinedButton.icon(
             onPressed: _pickToDate,
             icon: const Icon(Icons.calendar_month),
@@ -392,7 +488,8 @@ class _DailyCostGenerationPageState extends State<DailyCostGenerationPage> {
           ),
         ),
         ElevatedButton.icon(
-          onPressed: (_validating || _generating || !_hasProject) ? null : _validate,
+          onPressed:
+              (_validating || _generating || !_hasProject) ? null : _validate,
           icon: _validating
               ? const SizedBox(
                   width: 16,
@@ -403,7 +500,12 @@ class _DailyCostGenerationPageState extends State<DailyCostGenerationPage> {
           label: const Text('Validate'),
         ),
         FilledButton.icon(
-          onPressed: (_validating || _generating || !_hasProject) ? null : _generateAllEligible,
+          onPressed: (_validating ||
+                  _generating ||
+                  !_hasProject ||
+                  _monthLocked)
+              ? null
+              : _generateAllEligible,
           icon: _generating
               ? const SizedBox(
                   width: 16,
@@ -461,67 +563,133 @@ class _DailyCostGenerationPageState extends State<DailyCostGenerationPage> {
       ),
       child: Column(
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-            ),
-            child: const Row(
-              children: [
-                SizedBox(width: 110, child: Text('Date', style: TextStyle(fontWeight: FontWeight.bold))),
-                SizedBox(width: 110, child: Text('Worker', style: TextStyle(fontWeight: FontWeight.bold))),
-                SizedBox(width: 140, child: Text('Name', style: TextStyle(fontWeight: FontWeight.bold))),
-                SizedBox(width: 120, child: Text('Day Status', style: TextStyle(fontWeight: FontWeight.bold))),
-                SizedBox(width: 110, child: Text('Open Sessions', style: TextStyle(fontWeight: FontWeight.bold))),
-                SizedBox(width: 140, child: Text('Already Generated', style: TextStyle(fontWeight: FontWeight.bold))),
-                SizedBox(width: 180, child: Text('Status', style: TextStyle(fontWeight: FontWeight.bold))),
-                Expanded(child: Text('Reason', style: TextStyle(fontWeight: FontWeight.bold))),
-              ],
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: 1000,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(14)),
+                ),
+                child: const Row(
+                  children: [
+                    SizedBox(
+                        width: 95,
+                        child: Text('Date',
+                            style: TextStyle(fontWeight: FontWeight.bold))),
+                    SizedBox(
+                        width: 80,
+                        child: Text('Worker',
+                            style: TextStyle(fontWeight: FontWeight.bold))),
+                    SizedBox(
+                        width: 120,
+                        child: Text('Name',
+                            style: TextStyle(fontWeight: FontWeight.bold))),
+                    SizedBox(
+                        width: 95,
+                        child: Text('Day Status',
+                            style: TextStyle(fontWeight: FontWeight.bold))),
+                    SizedBox(
+                        width: 95,
+                        child: Text('Open Sessions',
+                            style: TextStyle(fontWeight: FontWeight.bold))),
+                    SizedBox(
+                        width: 115,
+                        child: Text('Already Generated',
+                            style: TextStyle(fontWeight: FontWeight.bold))),
+                    SizedBox(
+                        width: 150,
+                        child: Text('Status',
+                            style: TextStyle(fontWeight: FontWeight.bold))),
+                    SizedBox(
+                        width: 180,
+                        child: Text('Reason',
+                            style: TextStyle(fontWeight: FontWeight.bold))),
+                  ],
+                ),
+              ),
             ),
           ),
           Expanded(
             child: ListView.separated(
               itemCount: _rows.length,
-              separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade200),
+              separatorBuilder: (_, __) =>
+                  Divider(height: 1, color: Colors.grey.shade200),
               itemBuilder: (_, i) {
                 final r = _rows[i];
-                final eligible = r['eligible'] == true;
+                final eligible = !_monthLocked && r['eligible'] == true;
                 final reason = _safe(r['blocker_reason']);
                 final color = _statusColor(eligible, reason);
 
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  child: Row(
-                    children: [
-                      SizedBox(width: 110, child: Text(_safe(r['work_date']))),
-                      SizedBox(width: 110, child: Text(_safe(r['employee_id']))),
-                      SizedBox(width: 140, child: Text(_safe(r['employee_name']), overflow: TextOverflow.ellipsis)),
-                      SizedBox(width: 120, child: Text(_safe(r['day_status']))),
-                      SizedBox(width: 110, child: Text(_safe(r['open_sessions']))),
-                      SizedBox(
-                        width: 140,
-                        child: Text(
-                          r['already_generated'] == true ? 'YES' : 'NO',
+                return Container(
+                  color: (_monthLocked || reason == 'MONTH_ALREADY_APPROVED')
+                      ? Colors.orange.withOpacity(0.05)
+                      : null,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SizedBox(
+                      width: 1000,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 12),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 95,
+                              child: Text(_displayWorkDate(r['work_date'])),
+                            ),
+                            SizedBox(
+                              width: 80,
+                              child: Text(_safe(r['employee_id'])),
+                            ),
+                            SizedBox(
+                              width: 120,
+                              child: Text(
+                                _safe(r['employee_name']),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            SizedBox(
+                              width: 95,
+                              child: Text(_safe(r['day_status'])),
+                            ),
+                            SizedBox(
+                              width: 95,
+                              child: Text(_safe(r['open_sessions'])),
+                            ),
+                            SizedBox(
+                              width: 115,
+                              child: Text(
+                                (_monthLocked || reason == 'MONTH_ALREADY_APPROVED')
+                                    ? 'LOCKED'
+                                    : (r['already_generated'] == true ? 'YES' : 'NO'),
+                              ),
+                            ),
+                            SizedBox(
+                              width: 150,
+                              child: Text(
+                                _statusText(eligible, reason),
+                                style: TextStyle(
+                                  color: color,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: 180,
+                              child: Text(
+                                _reasonText(reason),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      SizedBox(
-                        width: 180,
-                        child: Text(
-                          _statusText(eligible, reason),
-                          style: TextStyle(
-                            color: color,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        child: Text(
-                          reason.isEmpty ? '-' : reason,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 );
               },
@@ -538,7 +706,9 @@ class _DailyCostGenerationPageState extends State<DailyCostGenerationPage> {
 
     if (!['COST_CONTROLLER', 'PM'].contains(role)) {
       return const Center(
-        child: Text('This page is available only for Cost Controller and PM.'),
+        child: Text(
+          'This page is available only for Cost Controller and PM.',
+        ),
       );
     }
 
@@ -553,7 +723,8 @@ class _DailyCostGenerationPageState extends State<DailyCostGenerationPage> {
             _buildFilters(),
             const SizedBox(height: 12),
             _buildStateBanner(),
-            if (_error != null || _actionMessage != null) const SizedBox(height: 12),
+            if (_error != null || _actionMessage != null || _monthLocked)
+              const SizedBox(height: 12),
             _buildGenerationSummary(),
             if (_generationResult != null) const SizedBox(height: 12),
             Row(
@@ -574,6 +745,12 @@ class _DailyCostGenerationPageState extends State<DailyCostGenerationPage> {
                   title: 'Already Generated',
                   value: _alreadyGeneratedCount.toString(),
                   icon: Icons.inventory_2_outlined,
+                ),
+                const SizedBox(width: 12),
+                _summaryCard(
+                  title: 'Month Locked',
+                  value: _monthLockedCount.toString(),
+                  icon: Icons.lock_outline,
                 ),
                 const SizedBox(width: 12),
                 _summaryCard(
