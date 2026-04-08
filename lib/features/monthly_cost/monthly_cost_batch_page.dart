@@ -58,18 +58,8 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
 
   String _monthLabel(DateTime d) {
     const months = <String>[
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec'
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
     ];
     return "${months[d.month - 1]} ${d.year}";
   }
@@ -86,21 +76,17 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
     if (year == null || month == null || month < 1 || month > 12) return s;
 
     const months = <String>[
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec'
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
     ];
 
     return '${months[month - 1]} $year';
+  }
+
+  String _displayDate(dynamic raw) {
+    final s = _safe(raw).trim();
+    if (s.isEmpty) return '-';
+    return s.length >= 10 ? s.substring(0, 10) : s;
   }
 
   String _minutesToHoursText(dynamic raw) {
@@ -145,6 +131,16 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
   bool get _isApprovedLocked =>
       _currentBatchStatus == 'PM_APPROVED' ||
       _currentBatchStatus == 'FINALIZED';
+
+  List<Map<String, dynamic>> get _detailItems {
+    final detail = _batchDetail;
+    if (detail == null || detail['items'] is! List) return <Map<String, dynamic>>[];
+    return List<Map<String, dynamic>>.from(
+      (detail['items'] as List)
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e)),
+    );
+  }
 
   Future<void> _pickMonth() async {
     int tempYear = _selectedMonth.year;
@@ -200,18 +196,8 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
                         final month = i + 1;
                         final selected = month == tempMonth;
                         const labels = [
-                          'Jan',
-                          'Feb',
-                          'Mar',
-                          'Apr',
-                          'May',
-                          'Jun',
-                          'Jul',
-                          'Aug',
-                          'Sep',
-                          'Oct',
-                          'Nov',
-                          'Dec'
+                          'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
                         ];
                         return InkWell(
                           borderRadius: BorderRadius.circular(10),
@@ -747,6 +733,30 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
     );
   }
 
+  Widget _detailSummaryCard(String title, String value) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.grey.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.black.withOpacity(0.05)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+            const SizedBox(height: 6),
+            Text(
+              value,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildFilters() {
     return Wrap(
       spacing: 12,
@@ -1004,37 +1014,14 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
             ),
             child: const Row(
               children: [
-                SizedBox(
-                    width: 140,
-                    child: Text('Type',
-                        style: TextStyle(fontWeight: FontWeight.bold))),
-                SizedBox(
-                    width: 90,
-                    child: Text('Severity',
-                        style: TextStyle(fontWeight: FontWeight.bold))),
-                SizedBox(
-                    width: 110,
-                    child: Text('Date',
-                        style: TextStyle(fontWeight: FontWeight.bold))),
-                SizedBox(
-                    width: 110,
-                    child: Text('Worker',
-                        style: TextStyle(fontWeight: FontWeight.bold))),
-                SizedBox(
-                    width: 110,
-                    child: Text('Supervisor',
-                        style: TextStyle(fontWeight: FontWeight.bold))),
-                SizedBox(
-                    width: 110,
-                    child: Text('SE',
-                        style: TextStyle(fontWeight: FontWeight.bold))),
-                SizedBox(
-                    width: 100,
-                    child: Text('Task',
-                        style: TextStyle(fontWeight: FontWeight.bold))),
-                Expanded(
-                    child: Text('Message',
-                        style: TextStyle(fontWeight: FontWeight.bold))),
+                SizedBox(width: 140, child: Text('Type', style: TextStyle(fontWeight: FontWeight.bold))),
+                SizedBox(width: 90, child: Text('Severity', style: TextStyle(fontWeight: FontWeight.bold))),
+                SizedBox(width: 110, child: Text('Date', style: TextStyle(fontWeight: FontWeight.bold))),
+                SizedBox(width: 110, child: Text('Worker', style: TextStyle(fontWeight: FontWeight.bold))),
+                SizedBox(width: 110, child: Text('Supervisor', style: TextStyle(fontWeight: FontWeight.bold))),
+                SizedBox(width: 110, child: Text('SE', style: TextStyle(fontWeight: FontWeight.bold))),
+                SizedBox(width: 100, child: Text('Task', style: TextStyle(fontWeight: FontWeight.bold))),
+                Expanded(child: Text('Message', style: TextStyle(fontWeight: FontWeight.bold))),
               ],
             ),
           ),
@@ -1070,11 +1057,8 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
                       ),
                       SizedBox(width: 110, child: Text(_safe(m['work_date']))),
                       SizedBox(width: 110, child: Text(_safe(m['employee_id']))),
-                      SizedBox(
-                          width: 110,
-                          child: Text(_safe(m['supervisor_employee_id']))),
-                      SizedBox(
-                          width: 110, child: Text(_safe(m['se_employee_id']))),
+                      SizedBox(width: 110, child: Text(_safe(m['supervisor_employee_id']))),
+                      SizedBox(width: 110, child: Text(_safe(m['se_employee_id']))),
                       SizedBox(width: 100, child: Text(_safe(m['task_id']))),
                       Expanded(child: Text(_safe(m['message']))),
                     ],
@@ -1132,6 +1116,112 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
     );
   }
 
+  Widget _buildReviewTable(List<Map<String, dynamic>> items) {
+    if (items.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.grey.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: const Text('No batch detail items available yet.'),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.black.withOpacity(0.06)),
+      ),
+      child: Column(
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: 1280,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(12)),
+                ),
+                child: const Row(
+                  children: [
+                    SizedBox(width: 110, child: Text('Date', style: TextStyle(fontWeight: FontWeight.bold))),
+                    SizedBox(width: 110, child: Text('Worker ID', style: TextStyle(fontWeight: FontWeight.bold))),
+                    SizedBox(width: 180, child: Text('Worker Name', style: TextStyle(fontWeight: FontWeight.bold))),
+                    SizedBox(width: 110, child: Text('Project', style: TextStyle(fontWeight: FontWeight.bold))),
+                    SizedBox(width: 110, child: Text('Option', style: TextStyle(fontWeight: FontWeight.bold))),
+                    SizedBox(width: 150, child: Text('Original Min / Hr', style: TextStyle(fontWeight: FontWeight.bold))),
+                    SizedBox(width: 170, child: Text('Added/Dist Min / Hr', style: TextStyle(fontWeight: FontWeight.bold))),
+                    SizedBox(width: 170, child: Text('Adjusted Min / Hr', style: TextStyle(fontWeight: FontWeight.bold))),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          SizedBox(
+            height: 320,
+            child: ListView.separated(
+              itemCount: items.length,
+              separatorBuilder: (_, __) =>
+                  Divider(height: 1, color: Colors.grey.shade200),
+              itemBuilder: (_, i) {
+                final row = items[i];
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SizedBox(
+                    width: 1280,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      child: Row(
+                        children: [
+                          SizedBox(width: 110, child: Text(_displayDate(row['work_date']))),
+                          SizedBox(width: 110, child: Text(_safe(row['employee_id']))),
+                          SizedBox(
+                            width: 180,
+                            child: Text(
+                              _safe(row['employee_name']),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          SizedBox(width: 110, child: Text(_safe(row['project_id']))),
+                          SizedBox(width: 110, child: Text(_safe(row['option_type']))),
+                          SizedBox(
+                            width: 150,
+                            child: Text(
+                              '${_safe(row['original_total_minutes'])} / ${_safe(row['original_hours'])}',
+                            ),
+                          ),
+                          SizedBox(
+                            width: 170,
+                            child: Text(
+                              '${_safe(row['added_or_distributed_minutes'])} / ${_safe(row['added_hours'])}',
+                            ),
+                          ),
+                          SizedBox(
+                            width: 170,
+                            child: Text(
+                              '${_safe(row['adjusted_total_minutes'])} / ${_safe(row['adjusted_hours'])}',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildGeneratedSummary() {
     final data = _generationData;
     final detail = _batchDetail;
@@ -1148,6 +1238,7 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
                 .map((e) => Map<String, dynamic>.from(e)),
           )
         : <Map<String, dynamic>>[];
+    final items = _detailItems;
 
     if (data == null && batchNode == null) {
       if (_loadingExistingBatch) {
@@ -1171,7 +1262,7 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
     return SingleChildScrollView(
       child: Center(
         child: Container(
-          constraints: const BoxConstraints(maxWidth: 900),
+          constraints: const BoxConstraints(maxWidth: 1080),
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
             color: Colors.white,
@@ -1251,61 +1342,19 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
                 runSpacing: 8,
                 spacing: 24,
                 children: [
-                  SizedBox(
-                    width: 380,
-                    child: _kv('Batch ID', _safe(current['batch_id'])),
-                  ),
-                  SizedBox(
-                    width: 200,
-                    child: _kv('Project', _safe(current['project_id'])),
-                  ),
-                  SizedBox(
-                    width: 180,
-                    child: _kv('Month', _displayBatchMonth(current['cost_month'])),
-                  ),
-                  SizedBox(
-                    width: 180,
-                    child: _kv('Option', _safe(current['option_type']).replaceAll('_', ' ')),
-                  ),
-                  SizedBox(
-                    width: 180,
-                    child: _kv(
-                      'Inserted Items',
-                      _safe(current['inserted_count'] ?? current['item_count']),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 220,
-                    child: _kv('Generated By', _safe(current['generated_by'])),
-                  ),
-                  SizedBox(
-                    width: 220,
-                    child: _kv('Generated At', _safe(current['generated_at'])),
-                  ),
-                  SizedBox(
-                    width: 220,
-                    child: _kv('Submitted By', _safe(current['submitted_by'])),
-                  ),
-                  SizedBox(
-                    width: 220,
-                    child: _kv('Submitted At', _safe(current['submitted_at'])),
-                  ),
-                  SizedBox(
-                    width: 220,
-                    child: _kv('Approved By', _safe(current['approved_by'])),
-                  ),
-                  SizedBox(
-                    width: 220,
-                    child: _kv('Approved At', _safe(current['approved_at'])),
-                  ),
-                  SizedBox(
-                    width: 220,
-                    child: _kv('Returned By', _safe(current['returned_by'])),
-                  ),
-                  SizedBox(
-                    width: 220,
-                    child: _kv('Returned At', _safe(current['returned_at'])),
-                  ),
+                  SizedBox(width: 380, child: _kv('Batch ID', _safe(current['batch_id']))),
+                  SizedBox(width: 200, child: _kv('Project', _safe(current['project_id']))),
+                  SizedBox(width: 180, child: _kv('Month', _displayBatchMonth(current['cost_month']))),
+                  SizedBox(width: 180, child: _kv('Option', _safe(current['option_type']).replaceAll('_', ' '))),
+                  SizedBox(width: 180, child: _kv('Inserted Items', _safe(current['inserted_count'] ?? current['item_count']))),
+                  SizedBox(width: 220, child: _kv('Generated By', _safe(current['generated_by']))),
+                  SizedBox(width: 220, child: _kv('Generated At', _safe(current['generated_at']))),
+                  SizedBox(width: 220, child: _kv('Submitted By', _safe(current['submitted_by']))),
+                  SizedBox(width: 220, child: _kv('Submitted At', _safe(current['submitted_at']))),
+                  SizedBox(width: 220, child: _kv('Approved By', _safe(current['approved_by']))),
+                  SizedBox(width: 220, child: _kv('Approved At', _safe(current['approved_at']))),
+                  SizedBox(width: 220, child: _kv('Returned By', _safe(current['returned_by']))),
+                  SizedBox(width: 220, child: _kv('Returned At', _safe(current['returned_at']))),
                 ],
               ),
               if (_safe(current['return_reason']).isNotEmpty) ...[
@@ -1346,21 +1395,21 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
                   _summaryCard(
                     title: 'Original',
                     value:
-                        '${_safe(totals['original_total_minutes'])} min\n${_minutesToHoursText(totals['original_total_minutes'])} hr',
+                        '${_safe(totals['original_total_minutes'])} min\n${_safe(totals['original_total_hours']).isNotEmpty ? _safe(totals['original_total_hours']) : _minutesToHoursText(totals['original_total_minutes'])} hr',
                     icon: Icons.timer_outlined,
                   ),
                   const SizedBox(width: 12),
                   _summaryCard(
                     title: 'Added/Distributed',
                     value:
-                        '${_safe(totals['added_or_distributed_minutes'])} min\n${_minutesToHoursText(totals['added_or_distributed_minutes'])} hr',
+                        '${_safe(totals['added_or_distributed_minutes'])} min\n${_safe(totals['added_total_hours']).isNotEmpty ? _safe(totals['added_total_hours']) : _minutesToHoursText(totals['added_or_distributed_minutes'])} hr',
                     icon: Icons.auto_fix_high,
                   ),
                   const SizedBox(width: 12),
                   _summaryCard(
                     title: 'Adjusted',
                     value:
-                        '${_safe(totals['adjusted_total_minutes'])} min\n${_minutesToHoursText(totals['adjusted_total_minutes'])} hr',
+                        '${_safe(totals['adjusted_total_minutes'])} min\n${_safe(totals['adjusted_total_hours']).isNotEmpty ? _safe(totals['adjusted_total_hours']) : _minutesToHoursText(totals['adjusted_total_minutes'])} hr',
                     icon: Icons.fact_check_outlined,
                   ),
                 ],
@@ -1414,6 +1463,44 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
                     ),
                 ],
               ),
+              const SizedBox(height: 24),
+              Text(
+                'Batch Review Details',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey.shade900,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  _detailSummaryCard('Detail Rows', items.length.toString()),
+                  const SizedBox(width: 12),
+                  _detailSummaryCard(
+                    'Original Hours',
+                    _safe(totals['original_total_hours']).isNotEmpty
+                        ? _safe(totals['original_total_hours'])
+                        : _minutesToHoursText(totals['original_total_minutes']),
+                  ),
+                  const SizedBox(width: 12),
+                  _detailSummaryCard(
+                    'Added Hours',
+                    _safe(totals['added_total_hours']).isNotEmpty
+                        ? _safe(totals['added_total_hours'])
+                        : _minutesToHoursText(totals['added_or_distributed_minutes']),
+                  ),
+                  const SizedBox(width: 12),
+                  _detailSummaryCard(
+                    'Adjusted Hours',
+                    _safe(totals['adjusted_total_hours']).isNotEmpty
+                        ? _safe(totals['adjusted_total_hours'])
+                        : _minutesToHoursText(totals['adjusted_total_minutes']),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _buildReviewTable(items),
               const SizedBox(height: 24),
               Text(
                 'Batch History',
