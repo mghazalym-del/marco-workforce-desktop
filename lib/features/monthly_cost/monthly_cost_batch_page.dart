@@ -74,6 +74,46 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
     return "${months[d.month - 1]} ${d.year}";
   }
 
+  String _displayBatchMonth(dynamic raw) {
+    final s = _safe(raw).trim();
+    if (s.isEmpty) return '-';
+
+    final m = RegExp(r'^(\d{4})-(\d{2})').firstMatch(s);
+    if (m == null) return s;
+
+    final year = int.tryParse(m.group(1)!);
+    final month = int.tryParse(m.group(2)!);
+    if (year == null || month == null || month < 1 || month > 12) return s;
+
+    const months = <String>[
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
+    ];
+
+    return '${months[month - 1]} $year';
+  }
+
+  String _minutesToHoursText(dynamic raw) {
+    final text = _safe(raw).trim();
+    if (text.isEmpty) return '-';
+
+    final minutes = double.tryParse(text);
+    if (minutes == null) return '-';
+
+    final hours = minutes / 60.0;
+    return hours.toStringAsFixed(2);
+  }
+
   bool get _hasProject =>
       _selectedProjectId != null && _selectedProjectId!.trim().isNotEmpty;
 
@@ -101,6 +141,10 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
     }
     return null;
   }
+
+  bool get _isApprovedLocked =>
+      _currentBatchStatus == 'PM_APPROVED' ||
+      _currentBatchStatus == 'FINALIZED';
 
   Future<void> _pickMonth() async {
     int tempYear = _selectedMonth.year;
@@ -365,10 +409,9 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
 
       if (detail == null) return;
 
-      final Map<String, dynamic> batchNode =
-        detail['batch'] is Map
-            ? Map<String, dynamic>.from(detail['batch'] as Map)
-            : <String, dynamic>{};
+      final Map<String, dynamic> batchNode = detail['batch'] is Map
+          ? Map<String, dynamic>.from(detail['batch'] as Map)
+          : <String, dynamic>{};
 
       setState(() {
         _batchDetail = detail;
@@ -388,6 +431,14 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
     if (!_hasProject) {
       setState(() {
         _error = 'Please select a project first.';
+      });
+      return;
+    }
+
+    if (_isApprovedLocked) {
+      setState(() {
+        _error = null;
+        _actionMessage = 'This monthly batch was approved by PM and is locked.';
       });
       return;
     }
@@ -439,6 +490,15 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
     if (!_hasProject) {
       setState(() {
         _error = 'Please select a project first.';
+      });
+      return;
+    }
+
+    if (_isApprovedLocked) {
+      setState(() {
+        _error = null;
+        _actionMessage =
+            'This monthly batch was approved by PM and cannot be regenerated.';
       });
       return;
     }
@@ -673,8 +733,9 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
                   Text(
                     value,
                     style: const TextStyle(
-                      fontSize: 22,
+                      fontSize: 16,
                       fontWeight: FontWeight.w700,
+                      height: 1.35,
                     ),
                   ),
                 ],
@@ -761,7 +822,9 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
           ),
         ),
         ElevatedButton.icon(
-          onPressed: (_busy || !_hasProject) ? null : _validate,
+          onPressed: (_busy || !_hasProject || _isApprovedLocked)
+              ? null
+              : _validate,
           icon: _validating
               ? const SizedBox(
                   width: 16,
@@ -772,7 +835,9 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
           label: const Text('Validate'),
         ),
         FilledButton.icon(
-          onPressed: (_busy || !_hasProject) ? null : _generate,
+          onPressed: (_busy || !_hasProject || _isApprovedLocked)
+              ? null
+              : _generate,
           icon: _generating
               ? const SizedBox(
                   width: 16,
@@ -783,10 +848,12 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
           label: const Text('Generate'),
         ),
         OutlinedButton.icon(
-          onPressed: _busy ? null : () async {
-            await _loadProjects();
-            await _loadExistingBatch();
-          },
+          onPressed: _busy
+              ? null
+              : () async {
+                  await _loadProjects();
+                  await _loadExistingBatch();
+                },
           icon: const Icon(Icons.refresh),
           label: const Text('Refresh'),
         ),
@@ -1081,14 +1148,15 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
                 .map((e) => Map<String, dynamic>.from(e)),
           )
         : <Map<String, dynamic>>[];
-        if (data == null && batchNode == null) {
-          if (_loadingExistingBatch) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          return const Center(
-            child: Text('No monthly batch generated yet.'),
-          );
-        }
+
+    if (data == null && batchNode == null) {
+      if (_loadingExistingBatch) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      return const Center(
+        child: Text('No monthly batch generated yet.'),
+      );
+    }
 
     final role = context.read<AppState>().role.toUpperCase().trim();
     final status = _currentBatchStatus;
@@ -1142,7 +1210,25 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
               const SizedBox(height: 12),
               Center(child: _buildStatusChip(status)),
               const SizedBox(height: 18),
-              if (role == 'COST_CONTROLLER')
+              if (_isApprovedLocked)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.green.withOpacity(0.20)),
+                  ),
+                  child: Text(
+                    'This monthly batch was approved by PM and is now locked. Validation and regeneration are disabled.',
+                    style: TextStyle(
+                      color: Colors.green.shade800,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              if (role == 'COST_CONTROLLER' && !_isApprovedLocked)
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
@@ -1153,13 +1239,11 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
                     border: Border.all(color: Colors.blue.withOpacity(0.18)),
                   ),
                   child: Text(
-                    status == 'PM_APPROVED'
-                        ? 'PM approved this batch. It is now locked.'
-                        : status == 'PM_RETURNED'
-                            ? 'PM returned this batch. Please review the reason below, fix if needed, then regenerate and submit again.'
-                            : status == 'SUBMITTED'
-                                ? 'This batch is waiting for PM review.'
-                                : 'This batch is ready for the Cost Controller workflow.',
+                    status == 'PM_RETURNED'
+                        ? 'PM returned this batch. Please review the reason below, fix if needed, then regenerate and submit again.'
+                        : status == 'SUBMITTED'
+                            ? 'This batch is waiting for PM review.'
+                            : 'This batch is ready for the Cost Controller workflow.',
                     style: TextStyle(color: Colors.blue.shade800),
                   ),
                 ),
@@ -1177,17 +1261,18 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
                   ),
                   SizedBox(
                     width: 180,
-                    child: _kv('Month', _safe(current['cost_month'])),
+                    child: _kv('Month', _displayBatchMonth(current['cost_month'])),
                   ),
                   SizedBox(
                     width: 180,
-                    child: _kv('Option', _safe(current['option_type'])),
+                    child: _kv('Option', _safe(current['option_type']).replaceAll('_', ' ')),
                   ),
                   SizedBox(
                     width: 180,
-                    child: _kv('Inserted Items', _safe(
-                      current['inserted_count'] ?? current['item_count'],
-                    )),
+                    child: _kv(
+                      'Inserted Items',
+                      _safe(current['inserted_count'] ?? current['item_count']),
+                    ),
                   ),
                   SizedBox(
                     width: 220,
@@ -1259,20 +1344,23 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
                   ),
                   const SizedBox(width: 12),
                   _summaryCard(
-                    title: 'Original Minutes',
-                    value: _safe(totals['original_total_minutes']),
+                    title: 'Original',
+                    value:
+                        '${_safe(totals['original_total_minutes'])} min\n${_minutesToHoursText(totals['original_total_minutes'])} hr',
                     icon: Icons.timer_outlined,
                   ),
                   const SizedBox(width: 12),
                   _summaryCard(
                     title: 'Added/Distributed',
-                    value: _safe(totals['added_or_distributed_minutes']),
+                    value:
+                        '${_safe(totals['added_or_distributed_minutes'])} min\n${_minutesToHoursText(totals['added_or_distributed_minutes'])} hr',
                     icon: Icons.auto_fix_high,
                   ),
                   const SizedBox(width: 12),
                   _summaryCard(
-                    title: 'Adjusted Minutes',
-                    value: _safe(totals['adjusted_total_minutes']),
+                    title: 'Adjusted',
+                    value:
+                        '${_safe(totals['adjusted_total_minutes'])} min\n${_minutesToHoursText(totals['adjusted_total_minutes'])} hr',
                     icon: Icons.fact_check_outlined,
                   ),
                 ],
