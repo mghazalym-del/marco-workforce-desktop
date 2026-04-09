@@ -169,7 +169,9 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
 
   List<Map<String, dynamic>> get _detailItems {
     final detail = _batchDetail;
-    if (detail == null || detail['items'] is! List) return <Map<String, dynamic>>[];
+    if (detail == null || detail['items'] is! List) {
+      return <Map<String, dynamic>>[];
+    }
     return List<Map<String, dynamic>>.from(
       (detail['items'] as List)
           .whereType<Map>()
@@ -422,8 +424,10 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
       });
 
       if (rows.isNotEmpty) {
-        await _loadBatchDetail(_safe(rows.first['batch_id']),
-            keepActionMessage: false);
+        await _loadBatchDetail(
+          _safe(rows.first['batch_id']),
+          keepActionMessage: false,
+        );
       }
     } catch (e) {
       setState(() {
@@ -436,18 +440,20 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
     }
   }
 
-  Future<void> _loadBatchDetail(String batchId,
-      {bool keepActionMessage = true}) async {
+  Future<void> _loadBatchDetail(
+    String batchId, {
+    bool keepActionMessage = true,
+  }) async {
     if (batchId.trim().isEmpty) return;
 
     try {
       final res = await _api.getJson('/monthly-cost/batches/$batchId');
 
       Map<String, dynamic>? detail;
-      if (res is Map) {
-        detail = Map<String, dynamic>.from(res);
-      } else if (res is Map && res['data'] is Map) {
+      if (res is Map && res['data'] is Map) {
         detail = Map<String, dynamic>.from(res['data']);
+      } else if (res is Map) {
+        detail = Map<String, dynamic>.from(res);
       }
 
       if (detail == null) return;
@@ -504,10 +510,7 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
         'option_type': _selectedOption,
       };
 
-      final res = await _api.postJson(
-        '/monthly-cost/validate',
-        body: body,
-      );
+      final res = await _api.postJson('/monthly-cost/validate', body: body);
 
       setState(() {
         _validationData = (res is Map) ? Map<String, dynamic>.from(res) : null;
@@ -573,10 +576,7 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
         'option_type': _selectedOption,
       };
 
-      final res = await _api.postJson(
-        '/monthly-cost/generate',
-        body: body,
-      );
+      final res = await _api.postJson('/monthly-cost/generate', body: body);
 
       setState(() {
         _generationData = (res is Map) ? Map<String, dynamic>.from(res) : null;
@@ -639,10 +639,7 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
     });
 
     try {
-      await _api.postJson(
-        '/monthly-cost/batches/$batchId/approve',
-        body: {},
-      );
+      await _api.postJson('/monthly-cost/batches/$batchId/approve', body: {});
       await _loadExistingBatch();
       await _loadBatchDetail(batchId);
       setState(() {
@@ -707,9 +704,7 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
     try {
       await _api.postJson(
         '/monthly-cost/batches/$batchId/reject',
-        body: {
-          'reason': reason.trim(),
-        },
+        body: {'reason': reason.trim()},
       );
       await _loadExistingBatch();
       await _loadBatchDetail(batchId);
@@ -802,7 +797,10 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+            Text(
+              title,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            ),
             const SizedBox(height: 6),
             Text(
               value,
@@ -1024,9 +1022,7 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
           ],
         ),
         const SizedBox(height: 16),
-        Expanded(
-          child: _buildIssuesTable(),
-        ),
+        Expanded(child: _buildIssuesTable()),
       ],
     );
   }
@@ -1071,14 +1067,61 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
             ),
             child: const Row(
               children: [
-                SizedBox(width: 140, child: Text('Type', style: TextStyle(fontWeight: FontWeight.bold))),
-                SizedBox(width: 90, child: Text('Severity', style: TextStyle(fontWeight: FontWeight.bold))),
-                SizedBox(width: 110, child: Text('Date', style: TextStyle(fontWeight: FontWeight.bold))),
-                SizedBox(width: 110, child: Text('Worker', style: TextStyle(fontWeight: FontWeight.bold))),
-                SizedBox(width: 110, child: Text('Supervisor', style: TextStyle(fontWeight: FontWeight.bold))),
-                SizedBox(width: 110, child: Text('SE', style: TextStyle(fontWeight: FontWeight.bold))),
-                SizedBox(width: 100, child: Text('Task', style: TextStyle(fontWeight: FontWeight.bold))),
-                Expanded(child: Text('Message', style: TextStyle(fontWeight: FontWeight.bold))),
+                SizedBox(
+                  width: 140,
+                  child: Text(
+                    'Type',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                SizedBox(
+                  width: 90,
+                  child: Text(
+                    'Severity',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                SizedBox(
+                  width: 110,
+                  child: Text(
+                    'Date',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                SizedBox(
+                  width: 110,
+                  child: Text(
+                    'Worker',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                SizedBox(
+                  width: 110,
+                  child: Text(
+                    'Supervisor',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                SizedBox(
+                  width: 110,
+                  child: Text(
+                    'SE',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                SizedBox(
+                  width: 100,
+                  child: Text(
+                    'Task',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    'Message',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
               ],
             ),
           ),
@@ -1114,8 +1157,14 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
                       ),
                       SizedBox(width: 110, child: Text(_safe(m['work_date']))),
                       SizedBox(width: 110, child: Text(_safe(m['employee_id']))),
-                      SizedBox(width: 110, child: Text(_safe(m['supervisor_employee_id']))),
-                      SizedBox(width: 110, child: Text(_safe(m['se_employee_id']))),
+                      SizedBox(
+                        width: 110,
+                        child: Text(_safe(m['supervisor_employee_id'])),
+                      ),
+                      SizedBox(
+                        width: 110,
+                        child: Text(_safe(m['se_employee_id'])),
+                      ),
                       SizedBox(width: 100, child: Text(_safe(m['task_id']))),
                       Expanded(child: Text(_safe(m['message']))),
                     ],
@@ -1173,6 +1222,13 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
     );
   }
 
+  Color _differenceColor(dynamic rawValue) {
+    final value = double.tryParse(_safe(rawValue)) ?? 0;
+    if (value > 0) return Colors.green.shade700;
+    if (value < 0) return Colors.red.shade700;
+    return Colors.grey.shade800;
+  }
+
   Widget _buildReviewRowsTable(List<Map<String, dynamic>> rows) {
     if (rows.isEmpty) {
       return Container(
@@ -1186,121 +1242,35 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
       );
     }
 
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.black.withOpacity(0.06)),
-      ),
-      child: Column(
-        children: [
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: SizedBox(
-              width: 1600,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(12)),
-                ),
-                child: const Row(
-                  children: [
-                    SizedBox(width: 110, child: Text('Date', style: TextStyle(fontWeight: FontWeight.bold))),
-                    SizedBox(width: 110, child: Text('Worker ID', style: TextStyle(fontWeight: FontWeight.bold))),
-                    SizedBox(width: 180, child: Text('Worker Name', style: TextStyle(fontWeight: FontWeight.bold))),
-                    SizedBox(width: 110, child: Text('Project', style: TextStyle(fontWeight: FontWeight.bold))),
-                    SizedBox(width: 110, child: Text('Task ID', style: TextStyle(fontWeight: FontWeight.bold))),
-                    SizedBox(width: 130, child: Text('Task Code', style: TextStyle(fontWeight: FontWeight.bold))),
-                    SizedBox(width: 220, child: Text('Task Name', style: TextStyle(fontWeight: FontWeight.bold))),
-                    SizedBox(width: 150, child: Text('Original Min / Hr', style: TextStyle(fontWeight: FontWeight.bold))),
-                    SizedBox(width: 150, child: Text('Added Min / Hr', style: TextStyle(fontWeight: FontWeight.bold))),
-                    SizedBox(width: 150, child: Text('Adjusted Min / Hr', style: TextStyle(fontWeight: FontWeight.bold))),
-                    SizedBox(width: 120, child: Text('Source', style: TextStyle(fontWeight: FontWeight.bold))),
-                  ],
-                ),
-              ),
-            ),
+    Widget headerCell(String text, double width) {
+      return SizedBox(
+        width: width,
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 12,
+            height: 1.25,
           ),
-          SizedBox(
-            height: 340,
-            child: ListView.separated(
-              itemCount: rows.length,
-              separatorBuilder: (_, __) =>
-                  Divider(height: 1, color: Colors.grey.shade200),
-              itemBuilder: (_, i) {
-                final row = rows[i];
-                return SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: SizedBox(
-                    width: 1600,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                      child: Row(
-                        children: [
-                          SizedBox(width: 110, child: Text(_displayDate(row['work_date']))),
-                          SizedBox(width: 110, child: Text(_safe(row['employee_id']))),
-                          SizedBox(
-                            width: 180,
-                            child: Text(
-                              _safe(row['employee_name']),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          SizedBox(width: 110, child: Text(_safe(row['project_id']))),
-                          SizedBox(width: 110, child: Text(_safe(row['task_id']))),
-                          SizedBox(width: 130, child: Text(_safe(row['task_code']))),
-                          SizedBox(
-                            width: 220,
-                            child: Text(
-                              _safe(row['task_name']),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          SizedBox(
-                            width: 150,
-                            child: Text(
-                              '${_safe(row['original_minutes'])} / ${_safe(row['original_hours'])}',
-                            ),
-                          ),
-                          SizedBox(
-                            width: 150,
-                            child: Text(
-                              '${_safe(row['added_minutes'])} / ${_safe(row['added_hours'])}',
-                            ),
-                          ),
-                          SizedBox(
-                            width: 150,
-                            child: Text(
-                              '${_safe(row['adjusted_minutes'])} / ${_safe(row['adjusted_hours'])}',
-                            ),
-                          ),
-                          SizedBox(width: 120, child: Text(_safe(row['source_option']))),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFallbackItemsTable(List<Map<String, dynamic>> items) {
-    if (items.isEmpty) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.grey.withOpacity(0.06),
-          borderRadius: BorderRadius.circular(10),
         ),
-        child: const Text('No batch detail items available yet.'),
+      );
+    }
+
+    Widget dataCell(
+      String text,
+      double width, {
+      TextStyle? style,
+      TextOverflow overflow = TextOverflow.ellipsis,
+    }) {
+      return SizedBox(
+        width: width,
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          overflow: overflow,
+          style: style ?? const TextStyle(fontSize: 13),
+        ),
       );
     }
 
@@ -1313,85 +1283,216 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
       ),
       child: Column(
         children: [
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: SizedBox(
-              width: 1280,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(12)),
-                ),
-                child: const Row(
-                  children: [
-                    SizedBox(width: 110, child: Text('Date', style: TextStyle(fontWeight: FontWeight.bold))),
-                    SizedBox(width: 110, child: Text('Worker ID', style: TextStyle(fontWeight: FontWeight.bold))),
-                    SizedBox(width: 180, child: Text('Worker Name', style: TextStyle(fontWeight: FontWeight.bold))),
-                    SizedBox(width: 110, child: Text('Project', style: TextStyle(fontWeight: FontWeight.bold))),
-                    SizedBox(width: 110, child: Text('Option', style: TextStyle(fontWeight: FontWeight.bold))),
-                    SizedBox(width: 150, child: Text('Original Min / Hr', style: TextStyle(fontWeight: FontWeight.bold))),
-                    SizedBox(width: 170, child: Text('Added/Dist Min / Hr', style: TextStyle(fontWeight: FontWeight.bold))),
-                    SizedBox(width: 170, child: Text('Adjusted Min / Hr', style: TextStyle(fontWeight: FontWeight.bold))),
-                  ],
-                ),
-              ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+            ),
+            child: Row(
+              children: [
+                headerCell('Date', 110),
+                headerCell('Worker', 190),
+                headerCell('Project', 100),
+                headerCell('Original\n(Min / Hr)', 150),
+                headerCell('Added\n(Min / Hr)', 150),
+                headerCell('Adjusted\n(Min / Hr)', 150),
+                headerCell('Difference\n(Min / Hr)', 160),
+              ],
             ),
           ),
           SizedBox(
-            height: 320,
+            height: 340,
             child: ListView.separated(
-              itemCount: items.length,
+              itemCount: rows.length,
               separatorBuilder: (_, __) =>
                   Divider(height: 1, color: Colors.grey.shade200),
               itemBuilder: (_, i) {
-                final row = items[i];
-                return SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: SizedBox(
-                    width: 1280,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                      child: Row(
-                        children: [
-                          SizedBox(width: 110, child: Text(_displayDate(row['work_date']))),
-                          SizedBox(width: 110, child: Text(_safe(row['employee_id']))),
-                          SizedBox(
-                            width: 180,
-                            child: Text(
-                              _safe(row['employee_name']),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          SizedBox(width: 110, child: Text(_safe(row['project_id']))),
-                          SizedBox(width: 110, child: Text(_safe(row['option_type']))),
-                          SizedBox(
-                            width: 150,
-                            child: Text(
-                              '${_safe(row['original_total_minutes'])} / ${_safe(row['original_hours'])}',
-                            ),
-                          ),
-                          SizedBox(
-                            width: 170,
-                            child: Text(
-                              '${_safe(row['added_or_distributed_minutes'])} / ${_safe(row['added_hours'])}',
-                            ),
-                          ),
-                          SizedBox(
-                            width: 170,
-                            child: Text(
-                              '${_safe(row['adjusted_total_minutes'])} / ${_safe(row['adjusted_hours'])}',
-                            ),
-                          ),
-                        ],
+                final row = rows[i];
+
+                final workerText =
+                    '${_safe(row['employee_id'])}\n${_safe(row['employee_name'])}';
+
+                return Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 12,
+                  ),
+                  child: Row(
+                    children: [
+                      dataCell(_displayDate(row['work_date']), 110),
+                      dataCell(workerText, 190),
+                      dataCell(_safe(row['project_id']), 100),
+                      dataCell(
+                        '${_safe(row['original_minutes'])} / ${_safe(row['original_hours'])}',
+                        150,
                       ),
-                    ),
+                      dataCell(
+                        '${_safe(row['added_minutes'])} / ${_safe(row['added_hours'])}',
+                        150,
+                      ),
+                      dataCell(
+                        '${_safe(row['adjusted_minutes'])} / ${_safe(row['adjusted_hours'])}',
+                        150,
+                      ),
+                      dataCell(
+                        '${_safe(row['difference_minutes'])} / ${_safe(row['difference_hours'])}',
+                        160,
+                        style: TextStyle(
+                          color: _differenceColor(row['difference_minutes']),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
                   ),
                 );
               },
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFallbackItemsTable(List<Map<String, dynamic>> items) {
+  if (items.isEmpty) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.grey.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Text('No batch detail items available yet.'),
+    );
+  }
+
+  Widget headerCell(String text, double width) {
+      return SizedBox(
+        width: width,
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 12,
+            height: 1.25,
+          ),
+        ),
+      );
+    }
+
+    Widget dataCell(
+      String text,
+      double width, {
+      TextStyle? style,
+      TextOverflow overflow = TextOverflow.ellipsis,
+    }) {
+      return SizedBox(
+        width: width,
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          overflow: overflow,
+          style: style ?? const TextStyle(fontSize: 13),
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.black.withOpacity(0.06)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+            ),
+            child: Row(
+              children: [
+                headerCell('Date', 110),
+                headerCell('Worker', 220),
+                headerCell('Project', 100),
+                headerCell('Original\n(Min / Hr)', 160),
+                headerCell('Added\n(Min / Hr)', 160),
+                headerCell('Adjusted\n(Min / Hr)', 160),
+                headerCell('Difference\n(Min / Hr)', 170),
+              ],
+            ),
+          ),
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+              itemCount: items.length,
+              separatorBuilder: (_, __) =>
+                  Divider(height: 1, color: Colors.grey.shade200),
+              itemBuilder: (_, i) {
+                final row = items[i];
+
+                final originalMin =
+                    double.tryParse(_safe(row['original_total_minutes'])) ?? 0;
+                final addedMin =
+                    double.tryParse(_safe(row['added_or_distributed_minutes'])) ??
+                        0;
+                final adjustedMin =
+                    double.tryParse(_safe(row['adjusted_total_minutes'])) ?? 0;
+                final differenceMin = adjustedMin - originalMin;
+
+                final originalHr =
+                    double.tryParse(_safe(row['original_hours'])) ??
+                        (originalMin / 60.0);
+                final addedHr =
+                    double.tryParse(_safe(row['added_hours'])) ??
+                        (addedMin / 60.0);
+                final adjustedHr =
+                    double.tryParse(_safe(row['adjusted_hours'])) ??
+                        (adjustedMin / 60.0);
+                final differenceHr = adjustedHr - originalHr;
+
+                final workerText =
+                    '${_safe(row['employee_id'])}\n${_safe(row['employee_name'])}';
+
+                return Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  child: Row(
+                    children: [
+                      dataCell(_displayDate(row['work_date']), 110),
+                      dataCell(workerText, 220),
+                      dataCell(_safe(row['project_id']), 100),
+                      dataCell(
+                        '${originalMin.toStringAsFixed(2)} / ${originalHr.toStringAsFixed(2)}',
+                        160,
+                      ),
+                      dataCell(
+                        '${addedMin.toStringAsFixed(2)} / ${addedHr.toStringAsFixed(2)}',
+                        160,
+                      ),
+                      dataCell(
+                        '${adjustedMin.toStringAsFixed(2)} / ${adjustedHr.toStringAsFixed(2)}',
+                        160,
+                      ),
+                      dataCell(
+                        '${differenceMin.toStringAsFixed(2)} / ${differenceHr.toStringAsFixed(2)}',
+                        170,
+                        style: TextStyle(
+                          color: _differenceColor(differenceMin),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
         ],
       ),
     );
@@ -1438,7 +1539,7 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
     return SingleChildScrollView(
       child: Center(
         child: Container(
-          constraints: const BoxConstraints(maxWidth: 1080),
+          constraints: const BoxConstraints(maxWidth: 1500),
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
             color: Colors.white,
@@ -1518,19 +1619,64 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
                 runSpacing: 8,
                 spacing: 24,
                 children: [
-                  SizedBox(width: 380, child: _kv('Batch ID', _safe(current['batch_id']))),
-                  SizedBox(width: 200, child: _kv('Project', _safe(current['project_id']))),
-                  SizedBox(width: 180, child: _kv('Month', _displayBatchMonth(current['cost_month']))),
-                  SizedBox(width: 180, child: _kv('Option', _safe(current['option_type']).replaceAll('_', ' '))),
-                  SizedBox(width: 180, child: _kv('Inserted Items', _safe(current['inserted_count'] ?? current['item_count']))),
-                  SizedBox(width: 220, child: _kv('Generated By', _safe(current['generated_by']))),
-                  SizedBox(width: 220, child: _kv('Generated At', _safe(current['generated_at']))),
-                  SizedBox(width: 220, child: _kv('Submitted By', _safe(current['submitted_by']))),
-                  SizedBox(width: 220, child: _kv('Submitted At', _safe(current['submitted_at']))),
-                  SizedBox(width: 220, child: _kv('Approved By', _safe(current['approved_by']))),
-                  SizedBox(width: 220, child: _kv('Approved At', _safe(current['approved_at']))),
-                  SizedBox(width: 220, child: _kv('Returned By', _safe(current['returned_by']))),
-                  SizedBox(width: 220, child: _kv('Returned At', _safe(current['returned_at']))),
+                  SizedBox(
+                    width: 380,
+                    child: _kv('Batch ID', _safe(current['batch_id'])),
+                  ),
+                  SizedBox(
+                    width: 200,
+                    child: _kv('Project', _safe(current['project_id'])),
+                  ),
+                  SizedBox(
+                    width: 180,
+                    child: _kv('Month', _displayBatchMonth(current['cost_month'])),
+                  ),
+                  SizedBox(
+                    width: 180,
+                    child: _kv(
+                      'Option',
+                      _safe(current['option_type']).replaceAll('_', ' '),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 180,
+                    child: _kv(
+                      'Inserted Items',
+                      _safe(current['inserted_count'] ?? current['item_count']),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 220,
+                    child: _kv('Generated By', _safe(current['generated_by'])),
+                  ),
+                  SizedBox(
+                    width: 220,
+                    child: _kv('Generated At', _safe(current['generated_at'])),
+                  ),
+                  SizedBox(
+                    width: 220,
+                    child: _kv('Submitted By', _safe(current['submitted_by'])),
+                  ),
+                  SizedBox(
+                    width: 220,
+                    child: _kv('Submitted At', _safe(current['submitted_at'])),
+                  ),
+                  SizedBox(
+                    width: 220,
+                    child: _kv('Approved By', _safe(current['approved_by'])),
+                  ),
+                  SizedBox(
+                    width: 220,
+                    child: _kv('Approved At', _safe(current['approved_at'])),
+                  ),
+                  SizedBox(
+                    width: 220,
+                    child: _kv('Returned By', _safe(current['returned_by'])),
+                  ),
+                  SizedBox(
+                    width: 220,
+                    child: _kv('Returned At', _safe(current['returned_at'])),
+                  ),
                 ],
               ),
               if (_safe(current['return_reason']).isNotEmpty) ...[
@@ -1669,7 +1815,9 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
                     'Added Hours',
                     _safe(totals['added_total_hours']).isNotEmpty
                         ? _safe(totals['added_total_hours'])
-                        : _minutesToHoursText(totals['added_or_distributed_minutes']),
+                        : _minutesToHoursText(
+                            totals['added_or_distributed_minutes'],
+                          ),
                   ),
                   const SizedBox(width: 12),
                   _detailSummaryCard(
