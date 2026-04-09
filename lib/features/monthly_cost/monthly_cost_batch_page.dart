@@ -58,8 +58,18 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
 
   String _monthLabel(DateTime d) {
     const months = <String>[
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
     ];
     return "${months[d.month - 1]} ${d.year}";
   }
@@ -68,19 +78,44 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
     final s = _safe(raw).trim();
     if (s.isEmpty) return '-';
 
-    final m = RegExp(r'^(\d{4})-(\d{2})').firstMatch(s);
-    if (m == null) return s;
+    DateTime? dt;
+    try {
+      dt = DateTime.parse(s).toLocal();
+    } catch (_) {
+      dt = null;
+    }
 
-    final year = int.tryParse(m.group(1)!);
-    final month = int.tryParse(m.group(2)!);
-    if (year == null || month == null || month < 1 || month > 12) return s;
+    final source = dt != null
+        ? DateTime(dt.year, dt.month, 1)
+        : (() {
+            final m = RegExp(r'^(\d{4})-(\d{2})').firstMatch(s);
+            if (m == null) return null;
+            final year = int.tryParse(m.group(1)!);
+            final month = int.tryParse(m.group(2)!);
+            if (year == null || month == null || month < 1 || month > 12) {
+              return null;
+            }
+            return DateTime(year, month, 1);
+          })();
+
+    if (source == null) return s;
 
     const months = <String>[
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
     ];
 
-    return '${months[month - 1]} $year';
+    return '${months[source.month - 1]} ${source.year}';
   }
 
   String _displayDate(dynamic raw) {
@@ -142,6 +177,18 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
     );
   }
 
+  List<Map<String, dynamic>> get _reviewRows {
+    final detail = _batchDetail;
+    if (detail == null || detail['review_rows'] is! List) {
+      return <Map<String, dynamic>>[];
+    }
+    return List<Map<String, dynamic>>.from(
+      (detail['review_rows'] as List)
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e)),
+    );
+  }
+
   Future<void> _pickMonth() async {
     int tempYear = _selectedMonth.year;
     int tempMonth = _selectedMonth.month;
@@ -196,8 +243,18 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
                         final month = i + 1;
                         final selected = month == tempMonth;
                         const labels = [
-                          'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+                          'Jan',
+                          'Feb',
+                          'Mar',
+                          'Apr',
+                          'May',
+                          'Jun',
+                          'Jul',
+                          'Aug',
+                          'Sep',
+                          'Oct',
+                          'Nov',
+                          'Dec'
                         ];
                         return InkWell(
                           borderRadius: BorderRadius.circular(10),
@@ -1116,7 +1173,125 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
     );
   }
 
-  Widget _buildReviewTable(List<Map<String, dynamic>> items) {
+  Widget _buildReviewRowsTable(List<Map<String, dynamic>> rows) {
+    if (rows.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.grey.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: const Text('No detailed review rows available from backend yet.'),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.black.withOpacity(0.06)),
+      ),
+      child: Column(
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: 1600,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(12)),
+                ),
+                child: const Row(
+                  children: [
+                    SizedBox(width: 110, child: Text('Date', style: TextStyle(fontWeight: FontWeight.bold))),
+                    SizedBox(width: 110, child: Text('Worker ID', style: TextStyle(fontWeight: FontWeight.bold))),
+                    SizedBox(width: 180, child: Text('Worker Name', style: TextStyle(fontWeight: FontWeight.bold))),
+                    SizedBox(width: 110, child: Text('Project', style: TextStyle(fontWeight: FontWeight.bold))),
+                    SizedBox(width: 110, child: Text('Task ID', style: TextStyle(fontWeight: FontWeight.bold))),
+                    SizedBox(width: 130, child: Text('Task Code', style: TextStyle(fontWeight: FontWeight.bold))),
+                    SizedBox(width: 220, child: Text('Task Name', style: TextStyle(fontWeight: FontWeight.bold))),
+                    SizedBox(width: 150, child: Text('Original Min / Hr', style: TextStyle(fontWeight: FontWeight.bold))),
+                    SizedBox(width: 150, child: Text('Added Min / Hr', style: TextStyle(fontWeight: FontWeight.bold))),
+                    SizedBox(width: 150, child: Text('Adjusted Min / Hr', style: TextStyle(fontWeight: FontWeight.bold))),
+                    SizedBox(width: 120, child: Text('Source', style: TextStyle(fontWeight: FontWeight.bold))),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          SizedBox(
+            height: 340,
+            child: ListView.separated(
+              itemCount: rows.length,
+              separatorBuilder: (_, __) =>
+                  Divider(height: 1, color: Colors.grey.shade200),
+              itemBuilder: (_, i) {
+                final row = rows[i];
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SizedBox(
+                    width: 1600,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      child: Row(
+                        children: [
+                          SizedBox(width: 110, child: Text(_displayDate(row['work_date']))),
+                          SizedBox(width: 110, child: Text(_safe(row['employee_id']))),
+                          SizedBox(
+                            width: 180,
+                            child: Text(
+                              _safe(row['employee_name']),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          SizedBox(width: 110, child: Text(_safe(row['project_id']))),
+                          SizedBox(width: 110, child: Text(_safe(row['task_id']))),
+                          SizedBox(width: 130, child: Text(_safe(row['task_code']))),
+                          SizedBox(
+                            width: 220,
+                            child: Text(
+                              _safe(row['task_name']),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          SizedBox(
+                            width: 150,
+                            child: Text(
+                              '${_safe(row['original_minutes'])} / ${_safe(row['original_hours'])}',
+                            ),
+                          ),
+                          SizedBox(
+                            width: 150,
+                            child: Text(
+                              '${_safe(row['added_minutes'])} / ${_safe(row['added_hours'])}',
+                            ),
+                          ),
+                          SizedBox(
+                            width: 150,
+                            child: Text(
+                              '${_safe(row['adjusted_minutes'])} / ${_safe(row['adjusted_hours'])}',
+                            ),
+                          ),
+                          SizedBox(width: 120, child: Text(_safe(row['source_option']))),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFallbackItemsTable(List<Map<String, dynamic>> items) {
     if (items.isEmpty) {
       return Container(
         width: double.infinity,
@@ -1239,6 +1414,7 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
           )
         : <Map<String, dynamic>>[];
     final items = _detailItems;
+    final reviewRows = _reviewRows;
 
     if (data == null && batchNode == null) {
       if (_loadingExistingBatch) {
@@ -1475,7 +1651,12 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
               const SizedBox(height: 10),
               Row(
                 children: [
-                  _detailSummaryCard('Detail Rows', items.length.toString()),
+                  _detailSummaryCard(
+                    'Detail Rows',
+                    reviewRows.isNotEmpty
+                        ? reviewRows.length.toString()
+                        : items.length.toString(),
+                  ),
                   const SizedBox(width: 12),
                   _detailSummaryCard(
                     'Original Hours',
@@ -1500,7 +1681,10 @@ class _MonthlyCostBatchPageState extends State<MonthlyCostBatchPage> {
                 ],
               ),
               const SizedBox(height: 12),
-              _buildReviewTable(items),
+              if (reviewRows.isNotEmpty)
+                _buildReviewRowsTable(reviewRows)
+              else
+                _buildFallbackItemsTable(items),
               const SizedBox(height: 24),
               Text(
                 'Batch History',
