@@ -34,6 +34,9 @@ dependencies:
   http: ^1.2.2
   shared_preferences: ^2.2.3
   provider: ^6.1.2
+  excel: ^2.1.0
+  file_saver: ^0.2.14
+  file_selector: ^1.0.3
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
@@ -67,6 +70,7 @@ flutter:
 
   assets:
     - assets/fonts/NotoSans-Regular.ttf
+    - assets/logo.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:
